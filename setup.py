@@ -4,9 +4,12 @@ import csv
 import logging
 import itertools
 import json
+import multiprocessing
 import os
 import pydub 
 import tempfile
+import threading
+import time
 import random
 import youtube_dl
 
@@ -17,7 +20,7 @@ class AudioDataGatherer(object):
     def __init__(this,  audioset_file, ontology_file, log_level = logging.WARN):
 
         this.log = logging.getLogger( type(this).__name__)
-        this.log.setLevel = log_level
+        this.log.setLevel(log_level)
 
         this.log.info ("Created")
 
@@ -33,25 +36,24 @@ class AudioDataGatherer(object):
         this.log.debug( 'skipping: ' + str(this.audset.readline() ))
         this.log.debug( 'skipping: ' + str(this.audset.readline() ))
 
-        this.audset= csv.DictReader(this.audset.readlines(), 
+        this.audset= list(csv.DictReader(this.audset.readlines(), 
                         fieldnames=[ 'YTID', 'start_seconds', 'end_seconds', 'positive_labels'],
                         delimiter=',',
                         quotechar='"',
                         quoting = csv.QUOTE_ALL,
-                        skipinitialspace=True)
+                        skipinitialspace=True))
 
- 
-    def build(this, include_names=[], exclude_names=[], output_dir = None, max_clips=None):
+    def build(this, include_names=[], exclude_names=[], output_dir = None, max_clips=None, 
+                max_threads = 1):
         
 
         this.log.debug('Building with includes:' + str(include_names) + 
                         ' or exclude: ' + str(exclude_names) )
 
-        if isinstance(include_names, str): include_names = [ include_names ]
-        if isinstance(exclude_names, str): exclude_names = [ exclude_names ]
-        
-        assert( ( len(include_names) > 0 and len(exclude_names) == 0 )  or 
-                ( len(include_names) == 0 and len(exclude_names) > 0) ) 
+        include_names, exclude_names = this._cludes_sanity(
+                                            include_names, exclude_names)
+
+        output_dir = this._setup_dir(output_dir)
 
         if len(include_names) > 0: 
             labels = this._getIDbyNames( include_names ) 
@@ -61,19 +63,103 @@ class AudioDataGatherer(object):
             metas = this._excludeClipsByLabels(labels, max_clips)
 
         this.log.info('collected ' + str(len(metas)) + ' metadatas')
+   
+        if max_threads == 1:
+            this.log.info('Single Threaded Clip Gatherer')
+            this._gather_st( metas, output_dir)
+        else:
+            this.log.info('Multi Threaded Clip Gatherer')
+            this._gather_mt(metas, output_dir, max_threads)
+
+    #
+    #
+    #
+    def _gather_st(this, metas, data_dir):
+        ''' Single threaded meta gatherer '''
         
+        this.log.debug('Single Threaded Clip Gatherer')
+
         for meta in metas:
             cid, cstart, cend  = meta
             this.log.debug('Gathering clip: ' + str(cid) + 
-                                ' s: ' + str(cstart) + ' e:' + str(cend))
-            this._build_ytid(ytid=cid, start=cstart, stop=cend, data_dir=output_dir)
+                            ' s: ' + str(cstart) + ' e:' + str(cend))
 
-        this.log.debug('Done Building') 
+            this._build_ytid(
+                    ytid=cid, start=cstart, stop=cend, data_dir=data_dir)
+        
+
+        this.log.info('Gathering complete!')
+
+
+    #
+    #
+    #
+    def _gather_mt(this, metas, data_dir, max_threads):
+        ''' Multi threaded meta gatherer '''
+
+        this.log.debug('Multi Threaded Clip Gatherer')
+
+        threads = []
+
+        for meta in metas:                
+            
+            #stop if thread limited
+            while len(threads) >= max_threads:
+                threads = list(filter( lambda x: x.exitcode == None, threads))
+                if len(threads) >= max_threads: time.sleep(0.1)
+               
+            #t = threading.Thread(
+            t = multiprocessing.Process(
+                        target=this._gather_st, \
+                        kwargs = dict(metas=[meta], data_dir=data_dir))
+
+            this.log.debug('Launching Thread for: ' + str(meta[0]))
+            t.start()
+            threads.append(t)
+
+        this.log.debug('Waiting for last threads to finish')
+        threads = list(filter( lambda x: x.exitcode == None, threads))
+        for t in threads:
+            t.join()
+
+        this.log.info('Gathering complete!')
+
+    #
+    #
+    #
+    def _setup_dir(this, ddir=None):
+        ''' setup an output directory if necessary ''' 
+        ddir = ddir if ddir is not None else os.getcwd()
+
+        if not os.path.exists(ddir):
+            this.log.debug('Creating data directory: ' + str(ddir))
+            os.makedirs(ddir)
+
+        return ddir           
+
+    #
+    #
+    #
+    def _cludes_sanity( this, include, exclude):
+        ''' does some simple sanity checking on the includes + excludes '''
+
+        if isinstance(include, str): include = [ include ]
+        if isinstance(exclude, str): exclude = [ exclude ]
+
+        assert( ( len(include) > 0 and len(exclude) == 0 )  or 
+                ( len(include) == 0 and len(exclude) > 0) ) 
+        
+        return include, exclude
+
+
+
 
     def _getIDbyNames(this, names):
         ''' selects ontology ID's by their corresponding human readable names '''
         
         this.log.debug('Selecting Ontology ID by NAME(S): ' + str(names))
+
+        if isinstance(names, str): names = [ names ]
 
         subs = [ x for x in this.ontol if x['name'] in names ]
         
@@ -95,13 +181,15 @@ class AudioDataGatherer(object):
 
                 if label in row['positive_labels']: 
                     
-                    this.log.debug('Adding: ' + str(row))
+                    #this.log.debug('Adding: ' + str(row))
                     clips.append( (row['YTID'],row['start_seconds'],row['end_seconds'] ) )
 
         if max_clips!=None and len(clips) >= max_clips:
-            this.log.debug('Excessive number of clips found (' 
+            this.log.info('Excessive number of clips found (' 
                                 + str(len(clips)) + '), downsampling')
             clips = this._downsample(clips, max_clips)
+
+        this.log.info('Total Clips : ' + str(len(clips)))
 
         return clips                        
 
@@ -119,16 +207,18 @@ class AudioDataGatherer(object):
 
             for label in labels:
                 if label in row['positive_labels']: 
-                    #this.log.debug('EXCLUDING : ' + str(row))
+                    this.log.debug('EXCLUDING : ' + str(row))
                     continue  # skip the row
 
             #this.log.debug('Adding: ' + str(row))
             clips.append( (row['YTID'],row['start_seconds'],row['end_seconds'] ) )
 
         if max_clips!=None and len(clips) >= max_clips:
-            this.log.debug('Excessive number of clips found (' 
+            this.log.info('Excessive number of clips found (' 
                                 + str(len(clips)) + '), downsampling')
             clips = this._downsample(clips, max_clips)
+
+        this.log.info('Total Clips : ' + str(len(clips)))
 
         return clips                        
 
@@ -137,23 +227,22 @@ class AudioDataGatherer(object):
             
 
     def _downsample(this, data, nsamples):
+        
+        subset = random.sample(list(data), nsamples)
+        return subset
+        
 
-        return random.sample(list(data), nsamples)
-
-    def _build_ytid(this, ytid, data_dir=None, start=0.0, stop=None):
+    def _build_ytid(this, ytid, data_dir, start=0.0, stop=None):
         '''
             Gets a youtube video based on youtube id, pulls out
             the audio between start and stop, and saves it to the data
             directory
         '''
          
-        ddir = data_dir if data_dir else os.getcwd()
+        ddir = data_dir 
 
-        this.log.info('Grabbing ' + str(ytid) + ' into ' + str(ddir))
-
-        if not os.path.exists(ddir):
-            this.log.debug('Creating data directory: ' + str(ddir))
-            os.makedirs(ddir)
+        this.log.info('Downloading' + str(ytid) )
+        this.log.debug('\t\t' + ' into ' + str(ddir))
 
         fname = ddir + '/' + ytid + '.wav'
 
@@ -161,14 +250,16 @@ class AudioDataGatherer(object):
             this.log.info('File already exists: ' + str(fname) + ' skipping')
 
         else: 
-            this.origwd = os.getcwd()
-            with tempfile.TemporaryDirectory() as tmpdir:
+            origwd = os.getcwd()
+            with tempfile.TemporaryDirectory( 
+                        suffix=str(threading.get_ident())) as tmpdir:
                 os.chdir(tmpdir)
             
                 tmpname = this._download_ytid(ytid)
-                this._crop( tmpname, fname, start, stop)
+                if tmpname != None:
+                    this._crop( tmpname, fname, start, stop)
 
-            os.chdir(this.origwd)
+            os.chdir(origwd)
 
     def _crop(this, in_fname, out_fname, start=0, stop=None): 
         ''' 
@@ -213,15 +304,19 @@ class AudioDataGatherer(object):
         with youtube_dl.YoutubeDL(ydl_opts) as ydl:
             url = 'https://www.youtube.com/watch?v=' + str(ytid)
             this.log.info("Downloading YTID: " + str(ytid) + ' : ' + str(url))
-            ydl.download([url] )
+            try:
+                ydl.download([url] )
+            except youtube_dl.utils.DownloadError as e:
+                this.log.warn('Video not found, skipping ' + str(ytid))
+                return None
 
         return os.getcwd() + '/' + ytid + '.wav'
 
 
 if __name__ == '__main__':
     
-    logging.basicConfig (level = logging.DEBUG,
-                            format='%(levelname)s %(name)s: %(message)s')
+    logging.basicConfig ( level = logging.WARN,
+                        format='%(levelname)s [0x%(process)x] %(name)s: %(message)s')
    
 
     #data_dir = os.getcwd() + '/_data'
@@ -246,10 +341,13 @@ if __name__ == '__main__':
     #good data
     good_dir = os.getcwd() + '/_data/good'
     a = AudioDataGatherer(audioset_file = 'balanced_train_segments.csv', 
-                            ontology_file = './ontology/ontology.json')
-    #a.build( include_names=['Truck','Engine'], output_dir=good_dir, max_clips = 2 )
+                            ontology_file = './ontology/ontology.json', 
+                            log_level = logging.INFO)
+    a.build( include_names=['Truck','Engine'], output_dir=good_dir, max_clips = 5000, 
+                max_threads = 50)
 
     bad_dir = os.getcwd() + '/_data/bad'
-    a.build( exclude_names=['Truck','Engine'], output_dir=bad_dir, max_clips = 2 )
+    a.build( exclude_names=['Truck','Engine'], output_dir=bad_dir, max_clips = 5000,
+                max_threads = 50)
 
 
