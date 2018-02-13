@@ -54,15 +54,18 @@ class AudioDataGatherer(object):
                                             include_names, exclude_names)
 
         output_dir = this._setup_dir(output_dir)
+        
+        include_labels = this._getIDbyNames( include_names ) 
+        exclude_labels = this._getIDbyNames( exclude_names ) 
 
-        if len(include_names) > 0: 
-            labels = this._getIDbyNames( include_names ) 
-            metas = this._includeClipsByLabels(labels, max_clips)
-        else: 
-            labels = this._getIDbyNames( exclude_names ) 
-            metas = this._excludeClipsByLabels(labels, max_clips)
+        if len(include_labels) == 0: 
+            this.log.debug('Including ALL labels')
+            include_labels = ['all']
+            
+        metas = this._insertClipsByLabels(include_labels, 
+                            exclude_labels, max_clips)
 
-        this.log.info('collected ' + str(len(metas)) + ' metadatas')
+        this.log.info('Collected ' + str(len(metas)) + ' metadatas')
    
         if max_threads == 1:
             this.log.info('Single Threaded Clip Gatherer')
@@ -70,6 +73,8 @@ class AudioDataGatherer(object):
         else:
             this.log.info('Multi Threaded Clip Gatherer')
             this._gather_mt(metas, output_dir, max_threads)
+
+        this.log.info('Gathering complete!')
 
     #
     #
@@ -88,7 +93,7 @@ class AudioDataGatherer(object):
                     ytid=cid, start=cstart, stop=cend, data_dir=data_dir)
         
 
-        this.log.info('Gathering complete!')
+        this.log.debug('done gathering')
 
 
     #
@@ -122,7 +127,7 @@ class AudioDataGatherer(object):
         for t in threads:
             t.join()
 
-        this.log.info('Gathering complete!')
+        this.log.debug('done gathering')
 
     #
     #
@@ -146,8 +151,8 @@ class AudioDataGatherer(object):
         if isinstance(include, str): include = [ include ]
         if isinstance(exclude, str): exclude = [ exclude ]
 
-        assert( ( len(include) > 0 and len(exclude) == 0 )  or 
-                ( len(include) == 0 and len(exclude) > 0) ) 
+        #assert( ( len(include) > 0 and len(exclude) == 0 )  or 
+        #        ( len(include) == 0 and len(exclude) > 0) ) 
         
         return include, exclude
 
@@ -166,65 +171,50 @@ class AudioDataGatherer(object):
         return [ x['id'] for x in subs ]
 
 
-    def _includeClipsByLabels( this, labels, max_clips=None):
+    def _insertClipsByLabels( this, includes, excludes, max_clips=None):
         ''' returns a number of (youtubeID, start_time, end_time) tuples 
             for a given set of labels  
         '''
-        assert( len(labels) > 0 ) 
+        assert( len(includes) > 0 ) 
         
-        this.log.debug('Searching for ' + str(labels) )
+        this.log.debug('Searching for ' + str(includes) + ' includes, and ' \
+                        + str(excludes) + ' excludes.')
 
         clips = []
 
         for row in this.audset:
-            for label in labels:
-
-                if label in row['positive_labels']: 
-                    
-                    #this.log.debug('Adding: ' + str(row))
-                    clips.append( (row['YTID'],row['start_seconds'],row['end_seconds'] ) )
-
-        if max_clips!=None and len(clips) >= max_clips:
-            this.log.info('Excessive number of clips found (' 
-                                + str(len(clips)) + '), downsampling')
-            clips = this._downsample(clips, max_clips)
-
-        this.log.info('Total Clips : ' + str(len(clips)))
-
-        return clips                        
-
-    def _excludeClipsByLabels( this, labels, max_clips=None):
-        ''' returns a number of (youtubeID, start_time, end_time) tuples 
-            excluding any with a given set of labels  
-        '''
-        assert( len(labels) > 0 ) 
-        
-        this.log.debug('Removing clips with ' + str(labels) )
-
-        clips = []
-
-        for row in this.audset:
-
-            for label in labels:
-                if label in row['positive_labels']: 
-                    this.log.debug('EXCLUDING : ' + str(row))
-                    continue  # skip the row
-
-            #this.log.debug('Adding: ' + str(row))
-            clips.append( (row['YTID'],row['start_seconds'],row['end_seconds'] ) )
-
-        if max_clips!=None and len(clips) >= max_clips:
-            this.log.info('Excessive number of clips found (' 
-                                + str(len(clips)) + '), downsampling')
-            clips = this._downsample(clips, max_clips)
-
-        this.log.info('Total Clips : ' + str(len(clips)))
-
-        return clips                        
-
- 
-
+            add = 'all' in includes
+            #this.log.debug('defaulting ' + row['YTID'] + ' = ' + str(add) )
             
+            if add == False:
+                # try to include first
+                for label in includes:
+                    if label in row['positive_labels']: 
+                        this.log.debug('Adding ' + row['YTID'] + ' (' + label + ')')
+                        add= True
+                        break
+
+            if add == True:
+                # try to exclude second
+                for label in excludes:
+                    if label in row['positive_labels']: 
+                        this.log.debug('Removing ' + row['YTID'] + ' (' + label + ')')
+                        add= False
+                        break
+
+            if add == True:
+                #this.log.debug('Actually adding ' + row['YTID'] ) 
+                clips.append( (row['YTID'],row['start_seconds'],row['end_seconds'] ) )
+
+        if max_clips!=None and len(clips) >= max_clips:
+            this.log.info('Excessive number of clips found (' 
+                                + str(len(clips)) + '), downsampling')
+            clips = this._downsample(clips, max_clips)
+
+        this.log.debug('Total Clips : ' + str(len(clips)))
+
+        return clips                        
+
 
     def _downsample(this, data, nsamples):
         
@@ -241,13 +231,13 @@ class AudioDataGatherer(object):
          
         ddir = data_dir 
 
-        this.log.info('Downloading' + str(ytid) )
+        this.log.info('Downloading: ' + str(ytid) )
         this.log.debug('\t\t' + ' into ' + str(ddir))
 
         fname = ddir + '/' + ytid + '.wav'
 
         if os.path.exists(fname):
-            this.log.info('File already exists: ' + str(fname) + ' skipping')
+            this.log.info('File already exists: ' + str(ytid) + '.wav. Skipping.')
 
         else: 
             origwd = os.getcwd()
@@ -266,9 +256,14 @@ class AudioDataGatherer(object):
         Crops a wave file on disk, overwrites the current file
         '''
 
-        this.log.info('cropping : ' + str(in_fname) )
+        this.log.debug('cropping : ' + str(in_fname) )
         
-        orig_aud = pydub.AudioSegment.from_wav(in_fname)
+        try:
+            orig_aud = pydub.AudioSegment.from_wav(in_fname)
+        except Exception as e:
+            this.log.ERR('Error occured while loading audiofile: ' + 
+                            str(e))
+            return                            
 
         if isinstance(start, str): start = int(float(start))
         start_ms = int(start * 1000)
@@ -281,7 +276,7 @@ class AudioDataGatherer(object):
             new_aud = orig_aud[start_ms:]
         
         this.log.debug('writing to: ' + str(out_fname))
-        new_aud.export(out_fname)
+        new_aud.export(out_fname, format='wav')
         
 
     def _download_ytid(this, ytid):
@@ -303,7 +298,7 @@ class AudioDataGatherer(object):
 
         with youtube_dl.YoutubeDL(ydl_opts) as ydl:
             url = 'https://www.youtube.com/watch?v=' + str(ytid)
-            this.log.info("Downloading YTID: " + str(ytid) + ' : ' + str(url))
+            this.log.debug("Downloading YTID: " + str(ytid) + ' : ' + str(url))
             try:
                 ydl.download([url] )
             except youtube_dl.utils.DownloadError as e:
@@ -340,14 +335,21 @@ if __name__ == '__main__':
     
     #good data
     good_dir = os.getcwd() + '/_data/good'
-    a = AudioDataGatherer(audioset_file = 'balanced_train_segments.csv', 
+    a = AudioDataGatherer(audioset_file = 'unbalanced_train_segments.csv', 
+    #a = AudioDataGatherer(audioset_file = 'balanced_train_segments.csv', 
                             ontology_file = './ontology/ontology.json', 
                             log_level = logging.INFO)
-    a.build( include_names=['Truck','Engine'], output_dir=good_dir, max_clips = 5000, 
-                max_threads = 50)
+    a.build( include_names=['Truck','Medium engine (mid frequency)', 
+                                    'Heavy engine (low frequency)'], 
+                exclude_names=['Air brake', 'Air horn, truck horn', 'Reversing beeps', 
+                                    'Ice cream truck, ice cream van', 
+                                    'Accelerating, revving, vroom' ],
+                output_dir=good_dir, max_clips = 5010, 
+                max_threads = 30)
 
     bad_dir = os.getcwd() + '/_data/bad'
-    a.build( exclude_names=['Truck','Engine'], output_dir=bad_dir, max_clips = 5000,
-                max_threads = 50)
+    a.build( exclude_names=[ 'Engine', 'Vehicle'], 
+                output_dir=bad_dir, max_clips = 5010,
+                max_threads = 30)
 
 
