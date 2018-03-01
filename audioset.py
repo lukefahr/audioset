@@ -1,4 +1,5 @@
 
+import copy
 import logging
 import numpy as np
 import os
@@ -13,17 +14,52 @@ except:
 class AudioData(object):
     def __init__(this, ys, framerate, ytid):
         
-        this.ys = ys
+        this._ys = ys
         this.framerate = framerate
         this.ytid = ytid
 
     def _fft( this, ):
-        hs = np.fft.rfft( this.ys)
+        hs = np.fft.rfft( this._ys)
         return hs
     
     def make_audio(this):
-        a = Audio(this.ys.real, rate=this.framerate)
+        a = Audio(this._ys.real, rate=this.framerate)
         return a
+    
+    def copy(this):
+        return copy.deepcopy(this)
+
+    @property
+    def ys(this):
+        return this._ys
+
+    @ys.setter
+    def ys(this,ys):
+        this._ys = ys
+
+        try: del this._hs
+        except AttributeError: pass
+
+    @property
+    def time(this):
+        return len(this._ys) / this.framerate
+    
+    @property
+    def hs(this):
+        try:
+            return this._hs
+        except AttributeError:
+            this._hs = np.fft.rfft(this._ys)
+            return this._hs
+   
+    @property
+    def fs(this):
+        try:
+            return this._fs
+        except AttributeError:
+            this._fs = np.fft.rfftfreq( len(this._ys), 1. / this.framerate)
+            return this._fs
+
 
 class AudioSetData (object):
     
@@ -129,7 +165,7 @@ class GoodAudioSetData (AudioSetData):
    
     def __getitem__(this, key):
         ytid = this.ytids[key]
-        print (ytid)
+        this.log.debug( 'ytid: ' + str(ytid))
         return this._getSampleData(ytid, this.subdir)
 
 class BadAudioSetData (GoodAudioSetData):
@@ -148,6 +184,18 @@ if __name__ == '__main__':
     logging.basicConfig ( level = logging.WARN,
                     format='%(levelname)s %(name)s: %(message)s')
     
+    print ('TESTING')
+    data = AudioData([0,0,1,0,0], 4 , 'biteme')
+    print ( data.ys )
+    data.ys = [ 0,0,2,0,0]
+    print ( data.ys)
+
+    print ('TESTING')
+    data = AudioData([0,0,1,0,0], 4, 'biteme')
+    print ( data.hs)
+    data.ys = [ 0,0,2,0,0]
+    print ( data.hs)
+
     print ('TESTING')
     asd = AudioSetData(logLvl=logging.DEBUG)
     data = asd._getSampleData('zfLqqw47CrM', 'good')

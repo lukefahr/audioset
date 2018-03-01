@@ -62,7 +62,7 @@ class AudioDataGatherer(object):
             this.log.debug('Including ALL labels')
             include_labels = ['all']
             
-        metas = this._insertClipsByLabels(include_labels, 
+        metas = this._findClipsByLabels(include_labels, 
                             exclude_labels, max_clips)
 
         this.log.info('Collected ' + str(len(metas)) + ' metadatas')
@@ -73,6 +73,24 @@ class AudioDataGatherer(object):
         else:
             this.log.info('Multi Threaded Clip Gatherer')
             this._gather_mt(metas, output_dir, max_threads)
+
+        this.log.info('Gathering complete!')
+
+    #
+    #
+    #
+    def build_one( this, ytid, output_dir):
+
+        this.log.debug('Gathering single clip from YTID:' + str(ytid))
+
+
+        meta = this._findClipsByYTID(ytid)
+
+        assert(len(meta) == 3)
+        cid, cstart, cend  = meta
+
+        this._build_ytid(
+                ytid=cid, start=cstart, stop=cend, data_dir=output_dir)
 
         this.log.info('Gathering complete!')
 
@@ -170,8 +188,17 @@ class AudioDataGatherer(object):
         
         return [ x['id'] for x in subs ]
 
+    
+    def _findClipsByYTID(this, ytid):
+        ''' return a (youtubeID, start_time, end_time) tuple for the 
+            given ytid
+        '''
+        for row in this.audset:
+            if row['YTID'] == ytid:
+                return (row['YTID'],row['start_seconds'],row['end_seconds'] ) 
 
-    def _insertClipsByLabels( this, includes, excludes, max_clips=None):
+        return None
+    def _findClipsByLabels( this, includes, excludes, max_clips=None):
         ''' returns a number of (youtubeID, start_time, end_time) tuples 
             for a given set of labels  
         '''
@@ -335,15 +362,32 @@ if __name__ == '__main__':
     
     #good data
     good_dir = os.getcwd() + '/_data/good'
-    a = AudioDataGatherer(audioset_file = 'unbalanced_train_segments.csv', 
-    #a = AudioDataGatherer(audioset_file = 'balanced_train_segments.csv', 
+
+    # build special - good
+
+    a = AudioDataGatherer(audioset_file = 'eval_segments.csv', 
                             ontology_file = './ontology/ontology.json', 
                             log_level = logging.INFO)
+
+    a.build_one('rdanJP7Usrg', output_dir =good_dir)
+
+    # build bulk - good
+
+    #a = AudioDataGatherer(audioset_file = 'balanced_train_segments.csv', 
+    a = AudioDataGatherer(audioset_file = 'unbalanced_train_segments.csv', 
+                            ontology_file = './ontology/ontology.json', 
+                            log_level = logging.INFO)
+
     a.build( include_names=['Truck','Medium engine (mid frequency)', 
                                     'Heavy engine (low frequency)'], 
-                exclude_names=['Air brake', 'Air horn, truck horn', 'Reversing beeps', 
-                                    'Ice cream truck, ice cream van', 
-                                    'Accelerating, revving, vroom' ],
+                exclude_names=[ 'Air brake', 
+                                'Air horn, truck horn', 
+                                'Reversing beeps', 
+                                'Ice cream truck, ice cream van', 
+                                'Accelerating, revving, vroom',  
+                                'Fire engine, fire truck (siren)',
+                                'Jet engine', 
+                               ], 
                 output_dir=good_dir, max_clips = 5010, 
                 max_threads = 30)
 
