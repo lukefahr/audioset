@@ -198,6 +198,8 @@ class AudioDataGatherer(object):
                 return (row['YTID'],row['start_seconds'],row['end_seconds'] ) 
 
         return None
+
+
     def _findClipsByLabels( this, includes, excludes, max_clips=None):
         ''' returns a number of (youtubeID, start_time, end_time) tuples 
             for a given set of labels  
