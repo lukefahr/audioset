@@ -107,6 +107,7 @@ class ClipDownloader(object):
             this.log.debug('Launching Thread for: ' + str(meta[0]))
             t.start()
             threads.append(t)
+            time.sleep(0.01)
 
         this.log.debug('Waiting for last threads to finish')
         threads = list(filter( lambda x: x.exitcode == None, threads))
@@ -144,12 +145,16 @@ class ClipDownloader(object):
             this.log.info('File already exists: ' + str(ytid) + '.wav. Skipping.')
 
         else: 
-            origwd = os.getcwd()
+            try:
+                origwd = os.getcwd()
+            except FileNotFoundError:
+                origwd = this.mydir
+
             with tempfile.TemporaryDirectory( 
                         suffix=str(threading.get_ident())) as tmpdir:
                 os.chdir(tmpdir)
             
-                tmpname = this._download_ytid(ytid)
+                tmpname =  this._download_ytid(ytid)
                 if tmpname != None:
                     this._crop( tmpname, fname, start, stop)
 
@@ -208,8 +213,10 @@ class ClipDownloader(object):
             except youtube_dl.utils.DownloadError as e:
                 this.log.warn('Video not found, skipping ' + str(ytid))
                 return None
-
-        return os.getcwd() + '/' + ytid + '.wav'
+        try: 
+            return os.getcwd() + '/' + ytid + '.wav'
+        except:
+            return None
 
       
 #

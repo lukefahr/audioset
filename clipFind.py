@@ -100,6 +100,28 @@ class ClipFinder:
 
         return clips
 
+    def nameLookup( this, ytid):
+        ''' 
+        '''
+
+        this.log.debug('Looking up names for ytid: ' + str(ytid))
+
+        for audsetf in this.audiosets:
+            audset = this._openAudSet(audsetf)
+
+            for row in audset: 
+                
+                if row['YTID'] == ytid:
+                    this.log.debug('found ytid: ' + str(row))
+                    labels = row['positive_labels']
+                    this.log.debug('found labels: ' + str(labels))
+                    names = [ x['name'] for x in this.ontol if x['id'] in labels]
+                    this.log.debug('found names: ' + str(names))
+                    
+                    return names
+        return None
+
+
     def _searchByLabels( this, includes=[], excludes=[], max_clips=1):
 
         clips = []
@@ -154,7 +176,6 @@ class ClipFinder:
         ''' selects ontology ID's by their corresponding human readable ontology names'''
         
         this.log.debug('Selecting Ontology ID by NAME(S): ' + str(names))
-
         if isinstance(names, str): names = [ names ]
 
         subs = [ x for x in this.ontol if x['name'] in names ]
@@ -170,12 +191,12 @@ class ClipFinder:
         this.log.debug( 'skipping: ' + str(audset.readline() ))
         this.log.debug( 'skipping: ' + str(audset.readline() ))
 
-        audset= list(csv.DictReader(audset.readlines(), 
+        audset= csv.DictReader(audset.readlines(), 
                         fieldnames=[ 'YTID', 'start_seconds', 'end_seconds', 'positive_labels'],
                         delimiter=',',
                         quotechar='"',
                         quoting = csv.QUOTE_ALL,
-                        skipinitialspace=True))
+                        skipinitialspace=True)
         
         return audset
 
@@ -191,13 +212,24 @@ class GoodClipFinder( ClipFinder):
                      
         super().__init__(audioset, ontology, logLvl)
 
-        this.includes = ['Truck', 'Medium engine (mid frequency)', ], 
-        this.excludes =[    'Air brake', 
+        this.includes = ['Truck', 'Medium engine (mid frequency)', ] #'Idling'] 
+        this.excludes =[    
+                            'Car',
+                            'Motorcycle',
+                            'Engine starting',
+                            'Heavy engine (low frequency)',
                             'Air horn, truck horn', 
                             'Reversing beeps', 
                             'Ice cream truck, ice cream van', 
                             'Fire engine, fire truck (siren)',
+                            'Aircraft',
                             'Jet engine', 
+                            'Speech',
+                            'Whir',
+                            'Toot',
+                            'Mechanical fan',
+                            'Traffic noise, roadway noise',
+                            'Accelerating, revving, vroom',
                            ] 
 
     def search( this, max_clips=1):
@@ -216,7 +248,7 @@ class BadClipFinder( GoodClipFinder):
         super().__init__(audioset, ontology, logLvl)
 
         this.includes = ['all']
-        this.excludes =[ 'Truck', 'Medium engine (mid frequency)', ] 
+        this.excludes =[ 'Truck', 'Medium engine (mid frequency)', 'Idling'] 
 
 #
 #

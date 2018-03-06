@@ -18,7 +18,7 @@ except:
 class AudioData(object):
     def __init__(this, ys, framerate, ytid):
         
-        this._ys = ys
+        this.ys = ys
         this.framerate = framerate
         this.ytid = ytid
 
@@ -33,13 +33,25 @@ class AudioData(object):
     def copy(this):
         return copy.deepcopy(this)
 
+    def normalize(this, amp=1.0):
+        high, low = abs(max(this._ys)), abs(min(this._ys))
+        new_ys = amp * this._ys / max(high, low)
+        this.ys = new_ys
+    
+    def getNames(this,):
+        try: return this._names
+        except AttributeError:
+            cf= clipFind.ClipFinder( audioset='eval,balanced,unbalanced')
+            this._names = cf.nameLookup(this.ytid)
+            return this._names
+
     @property
     def ys(this):
         return this._ys
 
     @ys.setter
     def ys(this,ys):
-        this._ys = ys
+        this._ys = np.array(ys)
 
         try: del this._hs
         except AttributeError: pass
@@ -147,7 +159,7 @@ class AudioSetData (object):
 
         this.log.debug('gathering metadatas for ytids')
         cf = clipFind.ClipFinder( audioset='eval,balanced,unbalanced', 
-                                    logLvl=logging.DEBUG)
+                                    logLvl=this.log.getEffectiveLevel())
         metas = cf.searchByYTIDs(ytids)
 
         return this._downloadMetas(metas, threads)
@@ -159,10 +171,28 @@ class AudioSetData (object):
                     logLvl=this.log.getEffectiveLevel())
         cdl.download(metas, max_threads = threads)
 
+    def _getMetasByYTIDs(this, ytids):
+        this.log.debug('collecting metas for random ytids')
+        cf = clipFind.ClipFinder( audioset='eval,balanced,unbalanced', 
+                                    logLvl=this.log.getEffectiveLevel())
+        return cf.searchByYTIDs(ytids)
 
+    
+    def _verifyMetas(this, metas):
+        ret_metas = []
+
+        for meta in metas:
+            ytid= meta[0]
+            
+            if os.path.exists(this.ddir + '/' + ytid + '.wav'):
+                ret_metas.append( meta)
+
+        return ret_metas
 
 
 class GoodAudioSetData (AudioSetData):
+    
+    class NotFoundException(Exception): pass
 
     class iter_wave(object):
         def __init__(this, obj, metas):
@@ -174,17 +204,43 @@ class GoodAudioSetData (AudioSetData):
             this.obj.log.debug ('meta: ' + str(meta) )
             return this.obj._getSampleData(meta[0], )
  
-    def __init__(this, num_samples=1, 
+    def __init__(this, num_samples=1,  download=False,
                     framerate=22000, max_threads = 1,
                     data_dir=None, logLvl=logging.INFO):
 
         super().__init__(framerate, data_dir, logLvl)
        
-        this.log.debug('collecting clip metadatas')
-        this.metas= this._getMetas( num_samples)
+        this.download = download
+       
+        this.metas = []
+        meta_num = num_samples
+        for i in range(5,0,-1): # try at most 5 round of expanded searches
+
+            this.log.debug('collecting ' + str(meta_num) + ' metadatas')
+            raw_metas= this._getMetas( meta_num )
+
+            if this.download:
+                this.log.debug('downloading clips')
+                this._downloadMetas(raw_metas, max_threads)
         
-        this.log.debug('downloading clips')
-        this._downloadMetas(this.metas, max_threads)
+            this.metas = this._verifyMetas(raw_metas)
+
+            if len(raw_metas) < meta_num:
+                this.log.info ('insufficient raw metas available: ' + 
+                            str(len(raw_metas)) )
+                break
+            elif len(this.metas) < num_samples:
+                this.log.debug('some metas not downloaded')
+                this.log.debug('have: ' + str(len(this.metas)) + 
+                                    ' want: ' + str(num_samples))
+                if i > 1: this.log.debug(' trying bigger search')
+                else: this.log.debug(' giving up')
+                meta_num *= 2
+            else:
+                this.log.debug('found sufficient metas')
+                break
+
+        this.metas = this.metas[:num_samples]
 
     def __iter__(this):
         return this.iter_wave(this, this.metas)
@@ -193,18 +249,31 @@ class GoodAudioSetData (AudioSetData):
         if isinstance(key, int):
             ytid = this.metas[key][0]
         else: 
+            if key not in [ m[0] for m in this.metas]:
+                this.log.debug('adding meta: ' + str(key))
+                this._addClips( [key] )
             ytid = key
-            assert( ytid in [ m[0] for m in this.metas])
 
         this.log.debug( '[ytid]: ' + str(ytid))
         return this._getSampleData(ytid )
 
     def _getMetas(this, maximum=None):
-
+        
         this.log.debug('collecting metadatas for ' + str(maximum) + 'clips')
         cf = clipFind.GoodClipFinder( logLvl=this.log.getEffectiveLevel() )
         return cf.search(maximum)
 
+    def _addClips( this, ytids):
+            metas = this._getMetasByYTIDs(ytids)
+
+            if this.download:
+                this._downloadMetas(metas)
+            
+            if this._verifyMetas( metas)  == []:
+                raise this.NotFoundException("Meta/s not found")
+
+            this.metas += metas
+            
 
 class BadAudioSetData (GoodAudioSetData):
 
@@ -240,6 +309,14 @@ if __name__ == '__main__':
     print ( data.hs)
 
     print ('TESTING')
+    data = AudioData([0,0,5,0,0], 4, 'biteme')
+    print ( data.ys)
+    data.normalize()
+    print ( list(map( lambda x,y: x==y, data.ys, [0,0,1.,0,0]) ))
+    assert( sum( map(lambda x,y: x==y, data.ys , [0,0,1.,0,0])) == 5 )
+
+
+    print ('TESTING')
     ytid = '2WI5dfkw4-k'
     asd = AudioSetData(data_dir = testdir, logLvl=logging.DEBUG)
     assert( os.path.exists( testdir + '/'+ ytid + '.wav') == False)
@@ -249,6 +326,13 @@ if __name__ == '__main__':
     assert( os.path.exists( testdir + '/'+ ytid + '.wav') ==  True)
 
     print ('TESTING')
+    asd = AudioSetData(data_dir = testdir, logLvl=logging.DEBUG)
+    meta = asd._getMetasByYTIDs('BJb9Idgq_xo')
+    print (meta)
+    assert(meta[0] == ('BJb9Idgq_xo', '30.000', '40.000') )  
+
+    print ('TESTING')
+    ytid = '2WI5dfkw4-k'
     data = asd._getSampleData(ytid)
     print (data.ys[:10])
     assert ( data.ys[0] == 9433)
@@ -256,30 +340,36 @@ if __name__ == '__main__':
     assert ( data.ys[0] == 9433)
    
     print ('TESTING')
-    gasd = GoodAudioSetData(2, data_dir=testdir, logLvl=logging.DEBUG)
+    gasd = GoodAudioSetData(2, download=True, data_dir=testdir, logLvl=logging.DEBUG)
+    data = gasd['BJb9Idgq_xo']
+    assert( data.ytid == 'BJb9Idgq_xo')
+
+    print ('TESTING')
+    gasd = GoodAudioSetData(2, download=False, data_dir=testdir, logLvl=logging.DEBUG)
     print (gasd[0].ys[:10])
-    assert( gasd[0].ys[0] == 3160)
-    assert( gasd[0].ytid == '--PJHxphWEs')
+    print (gasd[0].ytid)
+    assert( gasd[0].ys[0] == 1282)
+    assert( gasd[0].ytid == '-2PDE7hUArE')
 
     gitr = iter(gasd)
     data = next(gitr)
-    assert( data.ys[0] == 3160)
-    assert( data.ytid == '--PJHxphWEs')
+    assert( data.ys[0] == 1282)
+    assert( data.ytid == '-2PDE7hUArE')
 
     print ('TESTING')
     try:
         data = gasd['zfLqqw47CrM']
         raise
-    except AssertionError: pass
+    except gasd.NotFoundException: pass
 
     print ('TESTING')
-    gasd = GoodAudioSetData(2, data_dir=testdir, logLvl=logging.DEBUG)
+    gasd = GoodAudioSetData(2, download=True, data_dir=testdir, logLvl=logging.DEBUG)
     ig = iter(gasd)
-    assert( next(ig).ytid == '--PJHxphWEs')
-    assert( next(ig).ytid == '--ZhevVpy1s')
+    assert( next(ig).ytid == '-2PDE7hUArE')
+    assert( next(ig).ytid == '-DNkAalo7og')
 
     print ('TESTING')
-    basd = BadAudioSetData(2, logLvl = logging.DEBUG)
+    basd = BadAudioSetData(2, download=True, data_dir=testdir, logLvl = logging.DEBUG)
     ib = iter(basd)
     assert( next(ib).ytid == '--PJHxphWEs')
     assert( next(ib).ytid == '--ZhevVpy1s' )
@@ -287,6 +377,17 @@ if __name__ == '__main__':
     print ('TESTING')
     try:
         print (next(ib).ys[0])
+        raise
+    except StopIteration:
+        pass
+
+    print ('TESTING')
+    gasd = GoodAudioSetData(10, download=False, data_dir=testdir, logLvl=logging.DEBUG)
+    ig = iter(gasd)
+    print ( next(ig).ytid)
+    print ( next(ig).ytid)
+    try:
+        print ( next(ig).ytid)
         raise
     except StopIteration:
         pass
