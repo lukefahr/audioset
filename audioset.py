@@ -208,11 +208,17 @@ class GoodAudioSetData (AudioSetData):
                     framerate=22000, max_threads = 1,
                     data_dir=None, logLvl=logging.INFO):
 
+        assert( num_samples >= 0)
+
         super().__init__(framerate, data_dir, logLvl)
        
         this.download = download
        
         this.metas = []
+        
+        # no metas, that's fine
+        if num_samples == 0: return
+
         meta_num = num_samples
         for i in range(5,0,-1): # try at most 5 round of expanded searches
 
@@ -241,6 +247,13 @@ class GoodAudioSetData (AudioSetData):
                 break
 
         this.metas = this.metas[:num_samples]
+    
+    @property
+    def metasList(this):
+        return this.metas
+
+    def __len__(this):
+        return len(this.metas)
 
     def __iter__(this):
         return this.iter_wave(this, this.metas)
