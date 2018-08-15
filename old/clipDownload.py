@@ -28,7 +28,7 @@ class ClipDownloader(object):
         this.mydir = os.path.dirname(os.path.realpath(__file__))
         this.ddir =  data_dir
         if this.ddir == None:
-            this.ddir = this.mydir + '/_unified_data'
+            this.ddir = this.mydir + '/_data'
 
         if not os.path.exists(this.ddir):
             this.log.debug('Creating data directory: ' + str(this.ddir))
@@ -117,16 +117,6 @@ class ClipDownloader(object):
         this.log.debug('done gathering')
 
    
-    #def _findClipsByYTID(this, ytid):
-    #    ''' return a (youtubeID, start_time, end_time) tuple for the 
-    #        given ytid
-    #    '''
-    #    for row in this.audset:
-    #        if row['YTID'] == ytid:
-    #            return (row['YTID'],row['start_seconds'],row['end_seconds'] ) 
-
-    #    return None
-
     def _build_ytid(this, ytid, data_dir, start=0.0, stop=None):
         '''
             Gets a youtube video based on youtube id, pulls out

@@ -91,7 +91,7 @@ class AudioSetData (object):
         
         this.mydir = os.path.dirname(os.path.realpath(__file__))
 
-        this.ddir = this.mydir+'/_unified_data' if data_dir  == None \
+        this.ddir = this.mydir+'/_data' if data_dir  == None \
                         else data_dir
 
         this.framerate = framerate
