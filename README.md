@@ -1,12 +1,28 @@
+# Truck Audio Set Generator
 
-try this to get started: 
+This project used youtube and google's ontology to download
+an audio set of truck versus non-truck sounds. For basic
+usage use `make-simple-audioset.py` which is an example
+that downloads 10 truck sounds and 10 non-truck sounds.
 
-python3 audioset.py 
+Google rate limits downloads from youtube but parallel downloads
+via multiple threads significantly improves download speeds. This
+is the purpose of the `max_threads` parameter. 
 
-That will run a bunch of unit tests to collect and gather audio clips. 
+## Dependencies
 
-You might also need: 
+This project requires python 3 and ffmpeg in addition to the
+python packages youtube-dl, numpy, and pydub.
 
-pip3 install youtube_dl
-pip3 install pydub
+
+## try this to get started: 
+
+```bash
+pip3 install youtube_dl pydub numpy
+
+git clone https://github.com/lukefahr/audioset.git
+cd audioset
+git submodule update --init
+python3 make-simple-audioset.py
+```
 
