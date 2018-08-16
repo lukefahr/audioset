@@ -94,6 +94,7 @@ class AudioSetBuilder (object):
             this.log.debug('collecting ' + str(meta_num) + ' metadatas')
 
             raw_metas = this.cf.search( includes, excludes, meta_num) 
+
             if len(raw_metas) < meta_num:
                 this.log.warn('insufficient clips available: ' + 
                             str(len(raw_metas)) )
@@ -118,10 +119,34 @@ class AudioSetBuilder (object):
 
         this.log.debug('formatting clip names')
         this.metas = this.metas[:num_clips]
-        this.clips  = list(map(lambda x: this.ddir + '/'  + x[0] + '.wav', this.metas))
+        this.clips  = list(map(lambda x: this.ddir + '/'  + x['YTID'] + '.wav', this.metas))
 
         return this.clips
 
+    #
+    #
+    #
+    def info(this, fnames):
+        ''' returns the metadata and labels for a given file'''
+        
+        if isinstance(fnames, str):
+            fnames = [fnames]
+        
+        ytids = map(lambda x: x.split('/')[-1][:-4], fnames)
+        
+        metas = this.cf.searchByYTIDs(ytids)
+        
+        for meta in metas: 
+            meta['label_names'] = []
+            for labelID in meta['positive_labels'].split(','):
+                meta['label_names'] += [this.cf.labelName(labelID)]
+
+        if len( metas) == 1:
+            return metas[0]
+        else: return metas
+
+        
+ 
 
     #def _getSampleData(this, ytid):
     #    
@@ -202,7 +227,7 @@ class AudioSetBuilder (object):
         ret_metas = []
 
         for meta in metas:
-            ytid= meta[0]
+            ytid= meta['YTID']
             
             if os.path.exists(this.ddir + '/' + ytid + '.wav'):
                 ret_metas.append( meta)
@@ -262,12 +287,13 @@ class ClipFinder:
         else: this.ontol = ontol_file
         assert( os.path.exists(this.ontol))
         this.log.info('opening ontology json: ' + str(this.ontol))
-        this.ontol = open(this.ontol).read()
-        this.ontol = json.loads(this.ontol)
+        this.ontol = open(this.ontol, 'rb' ) #binary keeps Py 3.6.5 happy
+        this.ontol = json.load(this.ontol)
 
 
     def search( this, includes=[], excludes=[], max_clips=1):
-        ''' returns a number of (youtubeID, start_time, end_time) tuples 
+        ''' returns an ordered dictionary of 
+            ['YTID', start_time, end_time, positive_labels] 
             for a given set of human readable ontology names 
         '''
 
@@ -289,11 +315,15 @@ class ClipFinder:
         # then continue the search
         return this._searchByLabels( include_labels, exclude_labels, max_clips)
 
+    
+
+
+
     #
     #
     #
     def _searchByLabels( this, includes=[], excludes=[], max_clips=1):
-        ''' returns a series of (ytid,start,end) metadatas
+        ''' returns a series of (ytid,start,end,labels) metadatas
             given labels
         '''
         clips = []
@@ -334,9 +364,8 @@ class ClipFinder:
                     #if the clip makes it past exclude, then we're good
                     if add == True:
                         this.log.debug('Adding ' + row['YTID'] ) 
-                        clips.append( (row['YTID'],row['start_seconds'],
-                                        row['end_seconds'] ) )
-                    
+                        clips.append( row )                     
+
                     #stop early if we have enough clips
                     if max_clips!=None and len(clips) >= max_clips:
                         this.log.debug('Found sufficient number of clips found (' 
@@ -356,6 +385,8 @@ class ClipFinder:
         if isinstance(ytids, str):
             ytids = [ytids]
 
+        ytids = list(ytids)
+
         clips = []
     
         try:
@@ -367,9 +398,8 @@ class ClipFinder:
                     for ytid in ytids:
 
                         if row['YTID'] == ytid:
-                            clips.append( (row['YTID'],row['start_seconds'],
-                                            row['end_seconds'] ) )
-                        
+                            clips.append( row) 
+                           
                         if len(clips) == len(ytids):
                             this.log.debug('found all clips')
                             raise this.BreakException            
@@ -377,6 +407,18 @@ class ClipFinder:
         except this.BreakException: pass
 
         return clips
+
+    
+    def labelName( this, labelID):
+        
+        this.log.debug('Looking up names for labelID: ' + str(labelID))
+        
+        for line in this.ontol:
+            if line['id'] == labelID:
+                return line['name']
+        
+        this.log.debug('No names found for labelID: ' + str(labelID))
+        return None
 
     #def nameLookup( this, ytid):
     #    ''' 
@@ -498,8 +540,8 @@ class ClipDownloader(object):
         for meta in metas:                
             
             # do a check to prevent launching a process over nothing
-            if os.path.exists( data_dir + '/' + meta[0] + '.wav'):
-                this.log.debug('YTID exists: ' + str(meta[0]))
+            if os.path.exists( data_dir + '/' + meta['YTID'] + '.wav'):
+                this.log.debug('YTID exists: ' + str(meta['YTID']))
                 continue
 
             #stop if thread limited
@@ -512,7 +554,7 @@ class ClipDownloader(object):
                         target=this._download_st, \
                         kwargs = dict(metas=[meta], data_dir=data_dir))
 
-            this.log.debug('Launching Thread for: ' + str(meta[0]))
+            this.log.debug('Launching Thread for: ' + str(meta['YTID']))
             t.start()
             threads.append(t)
             time.sleep(0.01)
@@ -534,12 +576,11 @@ class ClipDownloader(object):
 
         for meta in metas:
 
-            cid, cstart, cend  = meta
-            this.log.debug('downloading clip: ' + str(cid) + 
-                            ' s: ' + str(cstart) + ' e:' + str(cend))
+            this.log.debug('downloading clip: ' + str(meta['YTID']) + 
+                            ' s: ' + str(meta['start_seconds']) + ' e:' + str(meta['end_seconds']))
 
             this._download_clip(
-                    ytid=cid, start=cstart, stop=cend, data_dir=data_dir)
+                    ytid=meta['YTID'], start=meta['start_seconds'], stop=meta['end_seconds'], data_dir=data_dir)
         
 
         this.log.debug('done downloading')
@@ -691,20 +732,18 @@ def TestClipFinder():
                                 'Jet engine', 
                                ], 
                     max_clips = 5) 
-    clip_ytids = [ x[0] for x in clips ]
+    clips_ytids = [ x['YTID'] for x in clips ]
 
-    clips2 = dg.searchByYTIDs(clip_ytids)
+    clips2 = dg.searchByYTIDs(clips_ytids)
+    clips2_ytids = [ x['YTID'] for x in clips2 ]
 
-    for x,y in zip(clips, clips2):
+    for x,y in zip(clips_ytids, clips2_ytids):
         assert( x==y)
-
-    print (clips)
-    print (clips2)
 
     dg = ClipFinder( audioset='eval,balanced,unbalanced', logLvl=logging.DEBUG)
     clip = dg.searchByYTIDs('zfLqqw47CrM')
 
-    assert( clip[0] == ('zfLqqw47CrM', '520.000', '530.000') )
+    assert( clip[0]['YTID'] == 'zfLqqw47CrM')
     print (clip)
 
 #
@@ -736,6 +775,12 @@ def TestAudioSetBuilder( delete=True):
     ref_clips = list(map(lambda x: testdir + '/' + x, ref_clips))
     assert( all([x==y for x, y in zip(clips, ref_clips)]))
     assert(len(clips) > 0)
+
+    print ('TESTING info')
+    metas = asd.info(ref_clips)
+    meta_labels = list(map(lambda x: x['positive_labels'],metas))
+    ref_labels = [ '/m/02mk9,/m/07pb8fc,/t/dd00066', '/m/02mk9,/m/07pb8fc,/t/dd00066']
+    assert( all( x==y for x,y in zip( meta_labels, ref_labels)))
 
     print ('TESTING, download=False')
     asd = AudioSetBuilder( data_dir=testdir, logLvl=logging.DEBUG)
