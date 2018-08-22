@@ -70,18 +70,15 @@ class AudioSetBuilder (object):
     #
     #
     #
-    def getClips (this, includes, excludes=[], num_clips=1,  
+    def getClips (this, num_clips, includes=['all'], excludes=[],
                         download=False, max_threads = 1):
         ''' does all the work to collect and gather clips, returing a 
             list of file names'''
 
-        if isinstance(includes, str): includes= [includes]
-        if isinstance(excludes, str): excludes= [excludes]
-
-        # no metas, that's fine
+        # no clips, that's fine
         if num_clips == 0: return
+        # but no negative clips
         assert( num_clips >0)
-        assert( len(includes) > 0 ) 
 
         this.metas = []
         
@@ -291,7 +288,7 @@ class ClipFinder:
         this.ontol = json.load(this.ontol)
 
 
-    def search( this, includes=[], excludes=[], max_clips=1):
+    def search( this, includes=['all'], excludes=[], max_clips=1):
         ''' returns an ordered dictionary of 
             ['YTID', start_time, end_time, positive_labels] 
             for a given set of human readable ontology names 
