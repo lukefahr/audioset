@@ -8,14 +8,20 @@ no_trucks = cwd + '/data/no_trucks'
 asb = audioset.AudioSetBuilder()
 
 good_clips = asb.getClips( includes= ['Truck', 'Medium engine (mid frequency)', ], 
-                  excludes=[ 'Air brake', 
-                                'Air horn, truck horn', 
-                                'Reversing beeps', 
-                                'Ice cream truck, ice cream van', 
+                excludes=[ 'Air brake',
+                                'Air horn, truck horn',
+                                'Reversing beeps',
+                                'Ice cream truck, ice cream van',
                                 'Fire engine, fire truck (siren)',
-                                'Jet engine', 
-                               ], 
-                    num_clips = 10, download=True, max_threads=5) 
+                                'Jet engine',
+                                  'Engine starting',
+                                  'Accelerating, revving, vroom',
+                                  'Car',
+                                  'Wood',
+                                  'Siren',
+                                  'Toot'
+                           ]
+                   num_clips = 10, download=True, max_threads=5) 
 print ('Good Clips: ')
 for clip in good_clips:
     print ('\t ' + str(clip))
