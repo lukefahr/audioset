@@ -1,9 +1,4 @@
-import os
 import audioset
-
-cwd = os.getcwd()
-trucks    = cwd + '/data/trucks'
-no_trucks = cwd + '/data/no_trucks'
 
 asb = audioset.AudioSetBuilder()
 
