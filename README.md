@@ -11,14 +11,14 @@ is the purpose of the `max_threads` parameter.
 
 ## Dependencies
 
-This project requires python 3 and ffmpeg in addition to the
-python packages youtube-dl, numpy, and pydub.
+This project requires python3 and ffmpeg in addition to the
+python packages youtube-dl and numpy.
 
 
 ## try this to get started: 
 
 ```bash
-pip3 install youtube_dl pydub numpy
+pip3 install youtube_dl numpy
 
 git clone https://github.com/lukefahr/audioset.git
 cd audioset

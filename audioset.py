@@ -17,8 +17,8 @@ import itertools
 import json
 import multiprocessing
 import os
-import pydub 
 import shutil
+import subprocess
 import tempfile
 import threading
 import time
@@ -38,7 +38,7 @@ class AudioSetBuilder (object):
     #
     #
     #
-    def __init__(this, framerate=22000, audioset='balanced',
+    def __init__(this, audioset='balanced',
                 eval_file = None, balanced_file = None, unbalanced_file = None, \
                 ontol_file = None,\
                 data_dir=None, logLvl=logging.INFO):
@@ -52,8 +52,6 @@ class AudioSetBuilder (object):
         this.ddir = this.mydir+'/_data' if data_dir  == None \
                         else data_dir
 
-        this.framerate = framerate
-        assert( this.framerate > 0 and this.framerate < 1e6)
         
         audioset = 'eval,balanced,unbalanced' if audioset == None \
                             else audioset
@@ -144,43 +142,6 @@ class AudioSetBuilder (object):
 
         
  
-
-    #def _getSampleData(this, ytid):
-    #    
-    #    this.log.info('Loading ytid: ' + str(ytid))
-
-    #    fname = this.ddir + '/' + ytid + '.wav'
-    #    assert( os.path.exists(fname))
-    #   
-    #    rate = 'r_' + str(int(this.framerate)) 
-    #    fname_rate = this.ddir + '/' + \
-    #            rate + '/' + ytid + '.wav'
-    #    if not os.path.exists(fname_rate):
-    #        this._downsample(fname, this.framerate, fname_rate)
-    #    
-    #    aud = pydub.AudioSegment.from_wav( fname_rate)
-    #    aud = aud.set_channels(1)
-    #    data = aud.get_array_of_samples()
-    #    data = np.asarray(data)
-
-    #    return AudioData (data, this.framerate, ytid)
-
-
-    def _downsample(this, fname, new_rate, new_fname):
-        assert( os.path.exists(fname) )
-        
-        dirname = os.path.dirname(new_fname)
-        if not os.path.exists(dirname):
-            this.log.debug('Creating: ' + str(dirname))
-            os.makedirs(dirname)
-
-        this.log.debug('Downsampling to: ' + str(new_rate))
-
-        down = pydub.AudioSegment.from_wav( fname)
-        down = down.set_frame_rate(new_rate)
-        down = down.set_channels(1)
-        _ = down.export( new_fname, format='wav')
-
 
     #def _downloadYTIDs(this, ytids, threads=1): 
     #    ''' download a list of ytids into the unified folder '''
@@ -572,7 +533,6 @@ class ClipDownloader(object):
         this.log.debug('Single Threaded Clip Downloader')
 
         for meta in metas:
-
             this.log.debug('downloading clip: ' + str(meta['YTID']) + 
                             ' s: ' + str(meta['start_seconds']) + ' e:' + str(meta['end_seconds']))
 
@@ -663,27 +623,31 @@ class ClipDownloader(object):
         '''
 
         this.log.debug('cropping : ' + str(in_fname) )
-        
-        try:
-            orig_aud = pydub.AudioSegment.from_wav(in_fname)
-        except Exception as e:
-            this.log.ERR('Error occured while loading audiofile: ' + 
-                            str(e))
-            return                            
+       
+        if isinstance(start, str): start = float(start)
+        if isinstance(stop, str): stop= int(float(stop)) 
+       
+        this.log.debug('writing to: ' + str(out_fname))
+        this.log.debug('start: ' + str(start))
 
-        if isinstance(start, str): start = int(float(start))
-        start_ms = int(start * 1000)
+        ffmpeg_args = ['ffmpeg']
+        ffmpeg_args += ['-y']
+        ffmpeg_args += ['-i', in_fname ]
+        ffmpeg_args += ['-ss', str(start)]
 
         if stop:
-            if isinstance(stop, str): stop= int(float(stop))
-            stop_ms = int(stop * 1000)
-            new_aud = orig_aud[start_ms:stop_ms]
-        else:
-            new_aud = orig_aud[start_ms:]
+            this.log.debug('duration: ' + str(stop-start))
+            ffmpeg_args += ['-t', str(stop - start)]
+        ffmpeg_args += [ out_fname ]
         
-        this.log.debug('writing to: ' + str(out_fname))
-        new_aud.export(out_fname, format='wav')
-        
+        this.log.debug('calling: ' + ' '.join(ffmpeg_args))
+        process = subprocess.run(ffmpeg_args)
+        if process.returncode != 0:
+            this.log.ERR("Error: {} encountered by {}".format(
+            process.returncode, clip_filename))
+            return
+ 
+        return        
 
 
 
@@ -701,12 +665,22 @@ def TestClipDownloader():
     if os.path.exists(testdir): shutil.rmtree(testdir)
 
     cdl = ClipDownloader( data_dir = testdir, logLvl=logging.DEBUG)
-
-    metas = [('-2PDE7hUArE', '30.000', '40.000'), 
-            ('-DNkAalo7og', '30.000', '40.000'), 
-            ('-GDC7PuqdOM', '30.000', '40.000'), 
-            ('-jBWkHhQNew', '30.000', '40.000'), 
-            ('-x2aAKUtNRw', '30.000', '40.000')] 
+    
+    metas = [{  'YTID':'-2PDE7hUArE', 
+                'start_seconds':'30.000', 
+                'end_seconds': '40.000'}, 
+             {  'YTID':'-DNkAalo7og', 
+                'start_seconds':'30.000', 
+                'end_seconds': '40.000'}, 
+             {  'YTID':'-GDC7PuqdOM', 
+                'start_seconds':'30.000', 
+                'end_seconds': '40.000'}, 
+             {  'YTID':'-jBWkHhQNew', 
+                'start_seconds':'30.000', 
+                'end_seconds': '40.000'}, 
+             {  'YTID':'-x2aAKUtNRw', 
+                'start_seconds':'30.000', 
+                'end_seconds': '40.000'}] 
     cdl.download(metas[0:2], max_threads = 1)
     cdl.download(metas, max_threads = 5)
 
