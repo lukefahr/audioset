@@ -260,6 +260,9 @@ class ClipFinder:
             ['YTID', start_time, end_time, positive_labels] 
             for a given set of human readable ontology names 
         '''
+        if not includes:
+            this.log.warn('Assuming includes=\'all\'')
+            includes = ['all']
 
         assert( max_clips >0)
         assert( len(includes) > 0 ) 
