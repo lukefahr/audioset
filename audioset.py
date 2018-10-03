@@ -127,7 +127,7 @@ class AudioSetBuilder (object):
         if isinstance(fnames, str):
             fnames = [fnames]
         
-        ytids = map(lambda x: x.split('/')[-1][:-4], fnames)
+        ytids = list(map(lambda x: x.split('/')[-1][:-4], fnames))
         
         metas = this.cf.searchByYTIDs(ytids)
         
@@ -218,7 +218,7 @@ class ClipFinder:
         
         this.log = logging.getLogger( type(this).__name__)
         this.log.setLevel(logLvl)
-        this.log.info ("Created")
+        this.log.info ("Created ")
        
         this.mydir = os.path.dirname(os.path.realpath(__file__))
      
@@ -229,17 +229,23 @@ class ClipFinder:
         if unbalanced_file == None:
             unbalanced_file = this.mydir + '/unbalanced_train_segments.csv'
 
-        audioset = audioset.lower().split(',')
         this.audiosets = []
-        if 'eval' in audioset:
-            this.audiosets += [ eval_file] 
-        if 'balanced' in audioset:
-            this.audiosets += [ balanced_file ]
-        if 'unbalanced' in audioset:
-            this.audiosets += [ unbalanced_file ] 
+        for audioset in audioset.lower().split(','):
+            if 'eval' == audioset:
+                this.log.debug('adding: ' + str(eval_file))
+                this.audiosets += [ eval_file] 
+            elif 'balanced' == audioset:
+                this.log.debug('adding: ' + str(balanced_file))
+                this.audiosets += [ balanced_file ]
+            elif 'unbalanced' == audioset:
+                this.log.debug('adding: ' + str(unbalanced_file))
+                this.audiosets += [ unbalanced_file ] 
+            else:   raise Exception("Unrecognized audioset")
 
         for audset in this.audiosets:
             assert( os.path.exists(audset) )
+
+        this.log.info("Total Audiosets: " + str(this.audiosets) )
         
         if ontol_file == None: this.ontol = this.mydir + '/ontology/ontology.json'
         else: this.ontol = ontol_file
@@ -343,9 +349,14 @@ class ClipFinder:
         if isinstance(ytids, str):
             ytids = [ytids]
 
-        ytids = list(ytids)
 
-        clips = []
+        listYtids = list(ytids)
+        setYtids = set(ytids)
+
+        this.log.debug('search for ytids: ' + str (listYtids[:4]) + 
+                        ('...' if len(listYtids)>4 else '') )
+
+        dictClips = {}
     
         try:
             for audsetf in this.audiosets:
@@ -353,18 +364,21 @@ class ClipFinder:
 
                 for row in audset:
                     
-                    for ytid in ytids:
+                    if row['YTID'] in setYtids:
+                        this.log.debug('found ytid: ' + row['YTID'])
 
-                        if row['YTID'] == ytid:
-                            clips.append( row) 
+                        dictClips[row['YTID']] = row  
                            
-                        if len(clips) == len(ytids):
+                        if len(dictClips) == len(listYtids):
                             this.log.debug('found all clips')
                             raise this.BreakException            
 
         except this.BreakException: pass
+        
+        # have unordered clips, need to make list
+        listClips = [ dictClips[x] for x in listYtids]
 
-        return clips
+        return listClips
 
     
     def labelName( this, labelID):
@@ -710,12 +724,25 @@ def TestClipFinder():
 
     for x,y in zip(clips_ytids, clips2_ytids):
         assert( x==y)
+    
+    #these used to get reversed in early version of searchByYTIDs
+    reverse_ytids = ['--S5Qr9ABZU', '--4qMR9M6tQ'] 
+    clips3 = dg.searchByYTIDs(reverse_ytids)
+    clips3_ytids = [ x['YTID'] for x in clips3 ]
+    for x,y in zip(reverse_ytids, clips3_ytids):
+        assert( x==y)
+
 
     dg = ClipFinder( audioset='eval,balanced,unbalanced', logLvl=logging.DEBUG)
     clip = dg.searchByYTIDs('zfLqqw47CrM')
 
     assert( clip[0]['YTID'] == 'zfLqqw47CrM')
     print (clip)
+
+    try:
+        dg = ClipFinder( audioset='balanaced,unbalanced', logLvl=logging.DEBUG)
+        raise
+    except: pass
 
 #
 #
@@ -731,8 +758,17 @@ def TestAudioSetBuilder( delete=True):
     if delete:
         if os.path.exists(testdir): shutil.rmtree(testdir)
 
+    asd = AudioSetBuilder( data_dir=testdir, logLvl=logging.DEBUG,
+                            audioset='balanced,unbalanced')
+    ref_clips2 = [ '/home/mlbase/audioset/%s/--CIar_Kl4Y.wav' % testdir,
+                    '/home/mlbase/audioset/%s/--jc0NAxK8M.wav' % testdir]
+    metas = asd.info(ref_clips2)                    
+    ytids = list(map(lambda x: x['YTID'], metas))
+    assert ( ytids == ['--CIar_Kl4Y','--jc0NAxK8M']) 
+
     print ('TESTING')
     asd = AudioSetBuilder( data_dir=testdir, logLvl=logging.DEBUG)
+
     clips = asd.getClips( includes= ['Truck', 'Medium engine (mid frequency)', ], 
                   excludes=[ 'Air brake', 
                                 'Air horn, truck horn', 
@@ -748,6 +784,7 @@ def TestAudioSetBuilder( delete=True):
     assert(len(clips) > 0)
 
     print ('TESTING info')
+
     metas = asd.info(ref_clips)
     meta_labels = list(map(lambda x: x['positive_labels'],metas))
     ref_labels = [ '/m/02mk9,/m/07pb8fc,/t/dd00066', '/m/02mk9,/m/07pb8fc,/t/dd00066']
@@ -838,5 +875,6 @@ if __name__ == '__main__':
     TestClipDownloader()
     TestClipFinder()
     TestAudioSetBuilder( delete=True)
+    #TestAudioSetBuilder( delete=False)
 
     print ('TESTING PASSED')
