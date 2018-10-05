@@ -91,9 +91,10 @@ class AudioSetBuilder (object):
             raw_metas = this.cf.search( includes, excludes, meta_num) 
 
             if len(raw_metas) < meta_num:
-                this.log.warn('insufficient clips available: ' + 
-                            str(len(raw_metas)) )
-                break
+                this.log.warn('insufficient clips available: %d, '
+                                'downloading what I have...' % 
+                                len(raw_metas))
+                i = 0 # don't try harder
 
             if download:
                 this.log.debug('downloading clips')
@@ -487,7 +488,7 @@ class ClipDownloader(object):
             this.log.debub('found tuple, promoting to list')
             metas = [ metas ] 
 
-        this.log.info('Collecting' + str(len(metas)) + ' metadatas')
+        this.log.info('Collecting ' + str(len(metas)) + ' metadatas')
    
         if max_threads == 1:
             this.log.info('Single-Threaded Clip Downloader')
