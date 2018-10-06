@@ -232,13 +232,13 @@ class ClipFinder:
 
         this.audiosets = []
         for audioset in audioset.lower().split(','):
-            if 'eval' == audioset:
+            if 'eval' == audioset.strip():
                 this.log.debug('adding: ' + str(eval_file))
                 this.audiosets += [ eval_file] 
-            elif 'balanced' == audioset:
+            elif 'balanced' == audioset.strip():
                 this.log.debug('adding: ' + str(balanced_file))
                 this.audiosets += [ balanced_file ]
-            elif 'unbalanced' == audioset:
+            elif 'unbalanced' == audioset.strip():
                 this.log.debug('adding: ' + str(unbalanced_file))
                 this.audiosets += [ unbalanced_file ] 
             else:   raise Exception("Unrecognized audioset")
