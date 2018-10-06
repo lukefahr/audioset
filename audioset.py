@@ -41,7 +41,7 @@ class AudioSetBuilder (object):
     def __init__(this, audioset='balanced',
                 eval_file = None, balanced_file = None, unbalanced_file = None, \
                 ontol_file = None,\
-                data_dir=None, logLvl=logging.INFO):
+                 data_dir=None, logLvl=logging.INFO, sampling_rate=None):
 
         this.log = logging.getLogger( type(this).__name__)
         this.log.setLevel(logLvl)
@@ -62,11 +62,8 @@ class AudioSetBuilder (object):
                         unbalanced_file=unbalanced_file, ontol_file=ontol_file,
                         logLvl=logLvl)
         this.cdl = ClipDownloader( data_dir = this.ddir , 
-                        logLvl=logLvl) 
+                                   logLvl=logLvl, sampling_rate=sampling_rate) 
 
-
-    #
-    #
     #
     def getClips (this, num_clips, includes=['all'], excludes=[],
                         download=False, max_threads = 1):
@@ -461,7 +458,7 @@ class ClipFinder:
 class ClipDownloader(object):
     ''' downloader for youtube clips '''
     
-    def __init__(this, data_dir=None, logLvl= logging.WARN):
+    def __init__(this, data_dir=None, sampling_rate = None,logLvl= logging.WARN):
 
         this.log = logging.getLogger( type(this).__name__)
         this.log.setLevel(logLvl)
@@ -469,6 +466,7 @@ class ClipDownloader(object):
 
         this.mydir = os.path.dirname(os.path.realpath(__file__))
         this.ddir =  data_dir
+        this.sampling_rate = sampling_rate
         if this.ddir == None:
             this.ddir = this.mydir + '/_data'
 
@@ -576,7 +574,7 @@ class ClipDownloader(object):
         this.log.info('Downloading: ' + str(ytid) )
         this.log.debug('\t\t' + ' into ' + str(ddir))
 
-        fname = ddir + '/' + ytid + '.wav'
+        fname = ddir + '/'+ ytid + '.wav'
 
         if os.path.exists(fname):
             this.log.info('File already exists: ' + str(ytid) + '.wav. Skipping.')
@@ -643,7 +641,8 @@ class ClipDownloader(object):
         this.log.debug('cropping : ' + str(in_fname) )
        
         if isinstance(start, str): start = float(start)
-        if isinstance(stop, str): stop= int(float(stop)) 
+        if isinstance(stop, str): stop= int(float(stop))
+        
        
         this.log.debug('writing to: ' + str(out_fname))
         this.log.debug('start: ' + str(start))
@@ -652,11 +651,20 @@ class ClipDownloader(object):
         ffmpeg_args += ['-y']
         ffmpeg_args += ['-i', in_fname ]
         ffmpeg_args += ['-ss', str(start)]
-
+        
         if stop:
             this.log.debug('duration: ' + str(stop-start))
             ffmpeg_args += ['-t', str(stop - start)]
+
+        ## for down-sampling -ar [sampling rate]
+        if this.sampling_rate:
+            sr = this.sampling_rate
+            if isinstance(sr, str): sr = int(float(sr))
+            print('Requested downsampling to {}'.format(this.sampling_rate))
+            ffmpeg_args +=['-ar', str(sr)]
+
         ffmpeg_args += [ out_fname ]
+            
         
         this.log.debug('calling: ' + ' '.join(ffmpeg_args))
         process = subprocess.run(ffmpeg_args)
@@ -682,7 +690,7 @@ def TestClipDownloader():
     
     if os.path.exists(testdir): shutil.rmtree(testdir)
 
-    cdl = ClipDownloader( data_dir = testdir, logLvl=logging.DEBUG)
+    cdl = ClipDownloader( data_dir = testdir,sampling_rate = 14000, logLvl=logging.DEBUG)
     
     metas = [{  'YTID':'-2PDE7hUArE', 
                 'start_seconds':'30.000', 
