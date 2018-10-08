@@ -1,6 +1,7 @@
+#!/usr/bin/env python3
 import audioset
 
-asb = audioset.AudioSetBuilder()
+asb = audioset.AudioSetBuilder('balanced, unbalanced')
 
 good_clips = asb.getClips( includes= ['Truck', 'Medium engine (mid frequency)', ], 
                 excludes=[ 'Air brake',
@@ -15,7 +16,7 @@ good_clips = asb.getClips( includes= ['Truck', 'Medium engine (mid frequency)', 
                                   'Wood',
                                   'Siren',
                                   'Toot'
-                           ]
+                           ],
                    num_clips = 10, download=True, max_threads=5) 
 print ('Good Clips: ')
 for clip in good_clips:
