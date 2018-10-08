@@ -24,7 +24,7 @@ import threading
 import time
 import random
 import youtube_dl
-
+import wave as wav
 
 #
 #
@@ -41,12 +41,14 @@ class AudioSetBuilder (object):
     def __init__(this, audioset='balanced',
                 eval_file = None, balanced_file = None, unbalanced_file = None, \
                 ontol_file = None,\
+                sampling_rate = None,\
                 data_dir=None, logLvl=logging.INFO):
 
         this.log = logging.getLogger( type(this).__name__)
         this.log.setLevel(logLvl)
         this.log.info ("Created")
-        
+
+        this.sampling_rate = sampling_rate
         this.mydir = os.path.dirname(os.path.realpath(__file__))
 
         this.ddir = this.mydir+'/_data' if data_dir  == None \
@@ -116,7 +118,9 @@ class AudioSetBuilder (object):
         this.log.debug('formatting clip names')
         this.metas = this.metas[:num_clips]
         this.clips  = list(map(lambda x: this.ddir + '/'  + x['YTID'] + '.wav', this.metas))
-
+        if this.sampling_rate:
+            Downsample(this.sampling_rate).downsample_clips(this.clips)
+        
         return this.clips
 
     #
@@ -195,6 +199,43 @@ class AudioSetBuilder (object):
 
 
 
+class Downsample(object):
+    """
+        Util class.Handles downsampling of downloaded audio clips.
+    """
+    def __init__(this, sampling_rate, log_lvl = logging.INFO):
+        this.sampling_rate = sampling_rate
+        this.log = logging.getLogger( type(this).__name__)
+        this.log.setLevel(log_lvl)
+        this.log.info ("Created ")
+
+    def _downsample_clip(this, clip):
+        """
+        Downsample supplied clip to this.sampling_rate, overwrite existing
+        file with downsampled data
+        """
+        ffmpeg_args = ['ffmpeg']
+        ffmpeg_args += ['-i', clip]
+        ffmpeg_args +=['-ar', str(int(float(this.sampling_rate)))]
+        ffmpeg_args += [ clip ]
+        ffmpeg_args += ['-y'] #force over-write
+    
+    
+        this.log.info('calling: ' + ' '.join(ffmpeg_args))
+        process = subprocess.run(ffmpeg_args)
+        if process.returncode != 0:
+            this.log.error("Error: {} encountered by {}".format(
+                process.returncode, clip))
+            
+    def downsample_clips(this, clips):
+        """
+        Try to downsample each clip in list clips, only when sampling rate of
+        a clip differs from the requested sampling rate
+        """
+        for clip in clips:
+            with wav.open(clip, 'rb') as wavf:
+                if not wavf.getframerate() == this.sampling_rate:
+                    this._downsample_clip(clip)
 
 #
 #
@@ -780,8 +821,8 @@ def TestAudioSetBuilder( delete=True):
                                 'Ice cream truck, ice cream van', 
                                 'Fire engine, fire truck (siren)',
                                 'Jet engine', 
-                               ], 
-                    num_clips = 2, download=True, max_threads=1) 
+                  ], 
+                num_clips = 2, download=True, max_threads=1) 
     ref_clips = [ '-2PDE7hUArE.wav', '-DNkAalo7og.wav']
     ref_clips = list(map(lambda x: testdir + '/' + x, ref_clips))
     assert( all([x==y for x, y in zip(clips, ref_clips)]))
@@ -820,8 +861,8 @@ def TestAudioSetBuilder( delete=True):
                                 'Ice cream truck, ice cream van', 
                                 'Fire engine, fire truck (siren)',
                                 'Jet engine', 
-                               ], 
-                    num_clips = 2, download=False, max_threads=1) 
+                  ], 
+                num_clips = 2, download=False, max_threads=1)
     if delete:
         assert(len(clips) == 0)
 
@@ -865,6 +906,28 @@ def TestAudioSetBuilder( delete=True):
 
 
 
+def TestDownSample():
+    def get_sampling_rate(fname):
+        _ = -1
+        with wav.open(fname, 'rb') as wavf:
+            _ = wavf.getframerate()
+        return _
+        
+    sr = 16500 # sampling rate : 16.5KHz
+    testdir = os.getcwd() + '/__testDownSample' 
+    asd = AudioSetBuilder( data_dir=testdir, sampling_rate = sr, logLvl=logging.DEBUG,
+                            audioset='eval')
+    clips = asd.getClips( includes= ['Truck', 'Medium engine (mid frequency)', ], 
+                  excludes=[ 'Air brake', 
+                             'Air horn, truck horn', 
+                             'Reversing beeps', 
+                             'Ice cream truck, ice cream van', 
+                             'Fire engine, fire truck (siren)',
+                             'Jet engine', 
+                  ],\
+                num_clips = 2, download=True, max_threads=2)
+    assert(all([ sr == get_sampling_rate(clip)  for clip in clips]))
+    
 
 #
 #
@@ -879,6 +942,7 @@ if __name__ == '__main__':
     TestClipDownloader()
     TestClipFinder()
     TestAudioSetBuilder( delete=True)
-    #TestAudioSetBuilder( delete=False)
-
+    # TestAudioSetBuilder( delete=False)
+    TestDownSample()
+    
     print ('TESTING PASSED')
