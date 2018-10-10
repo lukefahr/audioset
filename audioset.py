@@ -119,10 +119,20 @@ class AudioSetBuilder (object):
         this.log.debug('formatting clip names')
         this.metas = this.metas[:num_clips]
         this.clips  = list(map(lambda x: this.ddir + '/'  + x['YTID'] + '.wav', this.metas))
-        if this.sampling_rate:
-            Downsample(this.sampling_rate).downsample_clips(this.clips)
+        
+        if this.verify_sampling_rate(this.sampling_rate):
+            this.clips = Downsample(this.sampling_rate).downsample_clips(this.clips)
+        else:
+            this.log.warn('Cannot downsample at {}Hz.\nAllowed downsampling 1000-41000 Hz.\nSkipping downsampling'.format(this.sampling_rate))
 
         return this.clips
+    
+    def verify_sampling_rate(this, sampling_rate):
+        """ 
+        Explicitly blocking sampling rates below 1KHz and above 41KHz
+        """
+        return this.sampling_rate and this.sampling_rate >= 1000 and \
+            this.sampling_rate <= 41000
 
     #
     #
@@ -472,34 +482,64 @@ class Downsample(object):
         this.log.setLevel(log_lvl)
         this.log.info ("Created ")
         
-    def _downsample_clip(this, clip):
+    def _downsample_clip(this, clip, opfile):
         """
         Downsample supplied clip to this.sampling_rate, overwrite existing
         file with downsampled data
         """
+        ret = ''
+        if not os.path.exists( os.path.dirname(opfile)):
+            try:
+                this.log.debug('Creating directory path {}'.format(os.path.dirname(opfile)))
+                os.makedirs(os.path.dirname(opfile))
+            except OSError as e:
+                this.log.error('Failed to create directory {}'.format(os.path.dirname(opfile)))
+                return ret
+            
         ffmpeg_args = ['ffmpeg']
         ffmpeg_args += ['-i', clip]
         ffmpeg_args +=['-ar', str(int(float(this.sampling_rate)))]
-        ffmpeg_args += [ clip ]
-        ffmpeg_args += ['-y'] #force over-write
-    
-    
-        this.log.info('calling: ' + ' '.join(ffmpeg_args))
+        ffmpeg_args += [ opfile ]
+
         process = subprocess.run(ffmpeg_args)
         if process.returncode != 0:
             this.log.error("Error: {} encountered by {}".format(
                 process.returncode, clip))
+            return ret
+
+        ret = opfile
+        return ret
             
+
+    def get_downsampled_paths(this, clip_list):
+        downsampled_paths = []
+        for clip in clip_list:
+            split = os.path.split(os.path.abspath(clip))
+            new_path = split[0]+'/{}'.format(this.sampling_rate)
+            downsampled_paths.append(os.path.join(new_path,'{}_{}'.format(this.sampling_rate, split[1])))
+        return downsampled_paths
+        
     def downsample_clips(this, clips):
         """
         Try to downsample each clip in list clips, only when sampling rate of
         a clip differs from the requested sampling rate
         """
-        for clip in clips:
-            with wave.open(clip, 'rb') as wavf:
-                if not wavf.getframerate() == this.sampling_rate:
-                    this._downsample_clip(clip)
-   
+        downsampled_clips = this.get_downsampled_paths(clips)
+        ret = []
+        for clip, opfile in zip(clips, downsampled_clips):
+            try:
+                with wave.open(opfile, 'rb') as wavf:
+                    if not wavf.getframerate() == this.sampling_rate:
+                        ret.append(this._downsample_clip(clip, opfile))
+                    else:
+                        this.log.debug('File {} exists will skip'.format(opfile))
+                        ret.append(opfile)
+            except FileNotFoundError:
+                this.log.debug('{}: file could not be found so will create any-way'.format(opfile))
+                ret.append(this._downsample_clip(clip, opfile))
+
+        return ret
+    
 #
 #
 #
@@ -921,9 +961,11 @@ def TestDownSample():
         with wave.open(fname, 'rb') as wavf:
             _ = wavf.getframerate()
         return _
-        
+
+    
     sr = 16500 # sampling rate : 16.5KHz
-    testdir = os.getcwd() + '/__testDownSample' 
+    testdir = os.getcwd() + '/__testDownSample'
+    
     asd = AudioSetBuilder( data_dir=testdir, sampling_rate = sr, logLvl=logging.DEBUG,
                            audioset='eval')
     clips = asd.getClips( includes= ['Truck', 'Medium engine (mid frequency)', ], 
@@ -950,7 +992,7 @@ if __name__ == '__main__':
     TestClipDownloader()
     TestClipFinder()
     TestAudioSetBuilder( delete=True)
-    #TestAudioSetBuilder( delete=False)
+    # TestAudioSetBuilder( delete=False)
     TestDownSample()
 
     print ('TESTING PASSED')
