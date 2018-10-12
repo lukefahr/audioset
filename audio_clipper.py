@@ -26,11 +26,11 @@ class AudioClipper(object):
         return split[0]+'/{}'.format(this.chunk_dir)
     
     
-    def _get_chunk_abspath( this, fname, start, end):
+    def _get_chunk_abspath( this, fname, chunk_idx):
         split = os.path.split(os.path.abspath(fname))
         file_name, file_ext = os.path.splitext(split[1]) # file_name --PJHxphWEs, file_ext .wav
         op_dir = this._get_output_dir(fname)
-        return os.path.join( op_dir, file_name+'_{}-{}_msec'.format(start, end-1)+file_ext)
+        return os.path.join( op_dir, file_name+'_{}_'.format(chunk_idx)+file_ext)
 
     def _write_chunk_data(this, fname , data, params):
         r = -1
@@ -62,6 +62,8 @@ class AudioClipper(object):
         op_dir = this._get_output_dir(fname)
         chunks = []
         nSamples = round(this.chunk_duration*frame_rate/1000)
+
+        this.log.debug( 'chunk_duration {} frame_rate {} nSamples {}'.format(this.chunk_duration, frame_rate, nSamples))
         
         if not os.path.exists( op_dir):
             try:
@@ -77,7 +79,7 @@ class AudioClipper(object):
                 stop = len(ys)
             else:
                 stop = start + nSamples
-            chunk_path = this._get_chunk_abspath(fname, start, stop)
+            chunk_path = this._get_chunk_abspath(fname, i//nSamples)
             this.log.debug('chunk # {} start idx {} end idx {} >> n_samples {} path {}'.format(i//nSamples, start, stop, stop - start, chunk_path))
 
             # (nchannels, sampwidth, framerate, nframes, comptype, compname)
@@ -115,12 +117,12 @@ class TestAudioClipper(object):
                                          'Jet engine', 
                               ], 
                               num_clips = 1, download=True, max_threads=1) 
-        print('Downloaded clip :', clips[0])
+        # print('Downloaded clip :', clips[0])
+        this.original_audio_duration_ms = this._get_audio_duration_ms( clips[0])
         return clips[0]
     
-    def _get_audio_duration(this, fname):
+    def _get_audio_duration_ms(this, fname):
         ret = -1
-        testdir = './__testAudioClipper'
         with wave.open(fname, 'rb') as wavf:
             frameRate = wavf.getframerate()
             ys = wavf.readframes(wavf.getnframes())
@@ -128,15 +130,20 @@ class TestAudioClipper(object):
         return ret
 
     def test(this, chunk_duration):
-        clips = AudioClipper(chunk_duration).chunk_file(this.fname)
-        print('TEST clip {} chunk duration {}'.format(this.fname, chunk_duration))
-        assert(all([ chunk_duration >= this._get_audio_duration(c)   for c in clips]) )
+        clips = AudioClipper(chunk_duration, logLvl=logging.DEBUG).chunk_file(this.fname)
+        # print('TEST clip {} total duration {} chunk duration {} # of clips {}'.\
+              # format(this.fname,this.original_audio_duration_ms ,chunk_duration, len(clips)))
+        c_dur = [ this._get_audio_duration_ms(c)  for c in clips]
+
+        # print('# of chunks {}, sum of chunk durations {} '.format(len(clips), sum(c_dur)))
+        assert( this.original_audio_duration_ms == sum(c_dur))
+
     
         
 if __name__ == '__main__':
-    chunk_durations = [1000, 2000, 3000, 100, 500 , 200]
+    test_chunk_lens = [1000, 2000, 3000, 100, 500 , 200]
     tester = TestAudioClipper()
-    for c in chunk_durations:
+    for c in test_chunk_lens:
         tester.test(c)
         
     print('TEST PASSED')
