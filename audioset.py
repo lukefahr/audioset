@@ -49,7 +49,7 @@ class AudioSetBuilder (object):
         
         this.mydir = os.path.dirname(os.path.realpath(__file__))
 
-        this.ddir = this.mydir+'/_data' if data_dir  == None \
+        this.base_ddir = this.mydir+'/_data' if data_dir  == None \
                         else data_dir
 
         
@@ -61,25 +61,27 @@ class AudioSetBuilder (object):
                         eval_file=eval_file, balanced_file=balanced_file, 
                         unbalanced_file=unbalanced_file, ontol_file=ontol_file,
                         logLvl=logLvl)
-        this.cdl = ClipDownloader( data_dir = this.ddir , 
-                        logLvl=logLvl) 
-
 
     #
     #
     #
-    def getClips (this, num_clips, includes=['all'], excludes=[],
+    def getClips (this, label, num_clips, includes=['all'], excludes=[],
                         download=False, max_threads = 1):
         ''' does all the work to collect and gather clips, returing a 
             list of file names'''
 
         # no clips, that's fine
-        if num_clips == 0: return
         # but no negative clips
-        assert( num_clips >0)
+        assert( num_clips >=0)
+
+        if num_clips == 0: return
 
         this.metas = []
-        
+
+        data_dir =  this._setupDirectory( label, includes, excludes)
+
+        cdl = ClipDownloader(  data_dir, logLvl= this.log.level) 
+
         # this is a bit hacky, but try progressively larger searches 
         # until we've found enough *working* clips for our needs
         meta_num = num_clips
@@ -98,9 +100,9 @@ class AudioSetBuilder (object):
 
             if download:
                 this.log.debug('downloading clips')
-                this.cdl.download(raw_metas, max_threads = max_threads)
+                cdl.download(raw_metas, max_threads = max_threads)
 
-            this.metas = this._verifyMetas(raw_metas)
+            this.metas = this._verifyMetas(data_dir, raw_metas)
 
             if len(this.metas) < num_clips:
                 this.log.debug('some metas not downloaded')
@@ -115,7 +117,7 @@ class AudioSetBuilder (object):
 
         this.log.debug('formatting clip names')
         this.metas = this.metas[:num_clips]
-        this.clips  = list(map(lambda x: this.ddir + '/'  + x['YTID'] + '.wav', this.metas))
+        this.clips  = list(map(lambda x: data_dir + '/'  + x['YTID'] + '.wav', this.metas))
 
         return this.clips
 
@@ -141,7 +143,35 @@ class AudioSetBuilder (object):
             return metas[0]
         else: return metas
 
+    #
+    #
+    #
+    def _setupDirectory( this, label, includes, excludes):
+
+        assert( isinstance(label, str))
+        assert( label not in ['', '/', '\\'] )
         
+        data_dir = os.path.join(this.base_ddir,label)
+        meta_file = os.path.join(data_dir, 'meta.json')
+        
+        if os.path.exists(data_dir):
+            # make sure this has the same includes/excludes 
+            with open(meta_file, 'r') as fp:                    
+                d = json.load(fp)
+                if d['includes'] != includes:
+                    raise Exception('mismatched includes')
+                if d['excludes'] != excludes:
+                    raise Exception('mismatched excludes')
+        else:
+            # make the new directory, and pre-populate it with a metadata file
+            os.makedirs(data_dir)
+            d = {   'dir': data_dir, 
+                    'includes': includes, 
+                    'excludes': excludes }
+            with open(meta_file, 'w') as fp:                    
+                json.dump(d, fp)
+        
+        return data_dir   
  
 
     #def _downloadYTIDs(this, ytids, threads=1): 
@@ -181,14 +211,14 @@ class AudioSetBuilder (object):
     #
     #
     #
-    def _verifyMetas(this, metas):
+    def _verifyMetas(this, data_dir, metas):
         ''' double-check that all the files exists on disk '''
         ret_metas = []
 
         for meta in metas:
             ytid= meta['YTID']
             
-            if os.path.exists(this.ddir + '/' + ytid + '.wav'):
+            if os.path.exists(data_dir + '/' + ytid + '.wav'):
                 ret_metas.append( meta)
 
         return ret_metas
@@ -773,7 +803,8 @@ def TestAudioSetBuilder( delete=True):
     print ('TESTING')
     asd = AudioSetBuilder( data_dir=testdir, logLvl=logging.DEBUG)
 
-    clips = asd.getClips( includes= ['Truck', 'Medium engine (mid frequency)', ], 
+    clips = asd.getClips( label='truck', 
+                includes= ['Truck', 'Medium engine (mid frequency)', ], 
                   excludes=[ 'Air brake', 
                                 'Air horn, truck horn', 
                                 'Reversing beeps', 
@@ -783,7 +814,7 @@ def TestAudioSetBuilder( delete=True):
                                ], 
                     num_clips = 2, download=True, max_threads=1) 
     ref_clips = [ '-2PDE7hUArE.wav', '-DNkAalo7og.wav']
-    ref_clips = list(map(lambda x: testdir + '/' + x, ref_clips))
+    ref_clips = list(map(lambda x: testdir + '/truck/' + x, ref_clips))
     assert( all([x==y for x, y in zip(clips, ref_clips)]))
     assert(len(clips) > 0)
 
@@ -796,7 +827,7 @@ def TestAudioSetBuilder( delete=True):
 
     print ('TESTING, download=False')
     asd = AudioSetBuilder( data_dir=testdir, logLvl=logging.DEBUG)
-    clips = asd.getClips( includes= ['Truck', 'Medium engine (mid frequency)', ], 
+    clips = asd.getClips( label='truck', includes= ['Truck', 'Medium engine (mid frequency)', ], 
                   excludes=[ 'Air brake', 
                                 'Air horn, truck horn', 
                                 'Reversing beeps', 
@@ -806,14 +837,14 @@ def TestAudioSetBuilder( delete=True):
                                ], 
                     num_clips = 2, download=False, max_threads=1) 
     ref_clips = [ '-2PDE7hUArE.wav', '-DNkAalo7og.wav']
-    ref_clips = list(map(lambda x: testdir + '/' + x, ref_clips))
+    ref_clips = list(map(lambda x: testdir + '/truck/' + x, ref_clips))
     assert( all([x==y for x, y in zip(clips, ref_clips)]))
     assert(len(clips) > 0)
 
     print ('TESTING, specifying eval audioset, download=False')
     asd = AudioSetBuilder( data_dir=testdir, logLvl=logging.DEBUG,
                             audioset='eval')
-    clips = asd.getClips( includes= ['Truck', 'Medium engine (mid frequency)', ], 
+    clips = asd.getClips( label='truck3', includes= ['Truck', 'Medium engine (mid frequency)', ], 
                   excludes=[ 'Air brake', 
                                 'Air horn, truck horn', 
                                 'Reversing beeps', 
@@ -828,7 +859,7 @@ def TestAudioSetBuilder( delete=True):
     print ('TESTING, specifying eval audioset')
     asd = AudioSetBuilder( data_dir=testdir, logLvl=logging.DEBUG,
                             audioset='eval')
-    clips = asd.getClips( includes= ['Truck', 'Medium engine (mid frequency)', ], 
+    clips = asd.getClips( label='truck4', includes= ['Truck', 'Medium engine (mid frequency)', ], 
                   excludes=[ 'Air brake', 
                                 'Air horn, truck horn', 
                                 'Reversing beeps', 
@@ -838,7 +869,7 @@ def TestAudioSetBuilder( delete=True):
                                ], 
                     num_clips = 2, download=True, max_threads=1) 
     ref_clips = [ '-BY64_p-vtM.wav', '-HWygXWSNRA.wav']
-    ref_clips = list(map(lambda x: testdir + '/' + x, ref_clips))
+    ref_clips = list(map(lambda x: testdir + '/truck4/' + x, ref_clips))
     assert( all([x==y for x, y in zip(clips, ref_clips)]))
 
 
@@ -850,7 +881,7 @@ def TestAudioSetBuilder( delete=True):
             unbalanced_file = mydir + '/unbalanced_train_segments.csv',
             ontol_file = mydir + '/ontology/ontology.json',
             ) 
-    clips = asd.getClips( includes= ['Truck', 'Medium engine (mid frequency)', ], 
+    clips = asd.getClips( label='truck5', includes= ['Truck', 'Medium engine (mid frequency)', ], 
                   excludes=[ 'Air brake', 
                                 'Air horn, truck horn', 
                                 'Reversing beeps', 
@@ -860,7 +891,7 @@ def TestAudioSetBuilder( delete=True):
                                ], 
                     num_clips = 3, download=True, max_threads=5) 
     ref_clips = ['-2PDE7hUArE.wav', '-DNkAalo7og.wav', '-GDC7PuqdOM.wav']
-    ref_clips = list(map(lambda x: testdir + '/' + x, ref_clips))
+    ref_clips = list(map(lambda x: testdir + '/truck5/' + x, ref_clips))
     assert( all([x==y for x, y in zip(clips, ref_clips)]))
 
 
@@ -876,9 +907,9 @@ if __name__ == '__main__':
     logging.basicConfig ( level = logging.WARN,
                         format='%(levelname)s [0x%(process)x] %(name)s: %(message)s')
 
-    TestClipDownloader()
-    TestClipFinder()
-    TestAudioSetBuilder( delete=True)
-    #TestAudioSetBuilder( delete=False)
+    #TestClipDownloader()
+    #TestClipFinder()
+    #TestAudioSetBuilder( delete=True)
+    TestAudioSetBuilder( delete=False)
 
     print ('TESTING PASSED')
