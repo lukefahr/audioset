@@ -3,7 +3,8 @@ import audioset
 
 asb = audioset.AudioSetBuilder('balanced, unbalanced')
 
-good_clips = asb.getClips( includes= ['Truck', 'Medium engine (mid frequency)', ], 
+good_clips = asb.getClips( label='truck', 
+                includes= ['Truck', 'Medium engine (mid frequency)', ], 
                 excludes=[ 'Air brake',
                                 'Air horn, truck horn',
                                 'Reversing beeps',
@@ -23,7 +24,9 @@ for clip in good_clips:
     print ('\t ' + str(clip))
 
 
-bad_clips = asb.getClips ( includes = ['all'],
+bad_clips = asb.getClips ( 
+                label = 'notruck', 
+                includes = ['all'],
                 excludes =[ 'Truck', 'Medium engine (mid frequency)', 'Idling'],
                 num_clips = 10, download=True, max_threads = 5)
 
