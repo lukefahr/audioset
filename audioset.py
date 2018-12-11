@@ -127,13 +127,8 @@ class AudioSetBuilder (object):
         this.metas = this.metas[:num_clips]
 
         this.clips  = list(map(lambda x: data_dir + '/'  + x['YTID'] + '.wav', this.metas))
-        
-        if this.verify_sampling_rate(this.sampling_rate):
-            this.clips = Downsample(this.sampling_rate).downsample_clips(this.clips)
-        else:
-            this.log.warn('Cannot downsample at {}Hz.\nAllowed downsampling 1000-41000 Hz.\nSkipping downsampling'.format(this.sampling_rate))
-
-        if (this.downsamp):
+      
+        if this.downsamp:
             this.clips = this.downsamp.downsample_clips(this.clips)
            
         return this.clips
@@ -527,10 +522,14 @@ class Downsampler(object):
         Util class.Handles downsampling of downloaded audio clips.
     """
     def __init__(this, sampling_rate, log_lvl = logging.INFO):
-        this.sampling_rate = sampling_rate
         this.log = logging.getLogger( type(this).__name__)
         this.log.setLevel(log_lvl)
         this.log.info ("Created ")
+
+        if ( sampling_rate < 1000)  or ( sampling_rate <= 4100):
+            raise Exception('Cannot downsample at %d Hz.\nAllowed downsampling 1000-41000 Hz.' % this.sampling_rate)
+
+        this.sampling_rate = sampling_rate
         
     def _downsample_clip(this, clip, outfile):
         """
