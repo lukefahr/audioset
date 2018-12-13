@@ -66,6 +66,7 @@ class AudioSetBuilder (object):
                         logLvl=logLvl)
 
         if this.sampling_rate:
+            this.log.debug('Creating downsampler')
             this.downsamp = Downsampler(this.sampling_rate)
         else:
             this.downsamp = None
@@ -118,7 +119,7 @@ class AudioSetBuilder (object):
                                     ' want: ' + str(num_clips))
                 if i > 1: this.log.debug(' trying bigger search')
                 else: this.log.debug(' giving up')
-                meta_num *= 2
+                meta_num *= (2 if meta_num < 100 else 1.2) # this is a little inefficient
             else:
                 this.log.debug('found sufficient metas')
                 break
@@ -189,7 +190,8 @@ class AudioSetBuilder (object):
             with open(meta_file, 'r') as fp:                    
                 d = json.load(fp)
                 if d['includes'] != includes:
-                    raise Exception('mismatched includes')
+                    raise Exception('mismatched includes: \n %s \n vs. %s' 
+                                        % (d['includes'], includes) )
                 if d['excludes'] != excludes:
                     raise Exception('mismatched excludes')
         else:
