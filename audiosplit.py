@@ -28,7 +28,10 @@ import os
 import time
 import pandas as pd
 import scipy
-from sklearn.cross_validation import StratifiedKFold
+try:
+    from sklearn.cross_validation import StratifiedKFold
+except:
+    from sklearn.model_selection import StratifiedKFold
 import shutil
 import sys
 import wave
@@ -279,7 +282,13 @@ class AudioSplitter:
 
         # and run it 
         clipFiles['label_idx'] =  clipFiles['label'].astype('category').cat.codes
-        skf = StratifiedKFold(clipFiles.label_idx, n_folds=cfg.num_folds)
+        try:
+            skf = StratifiedKFold(clipFiles.label_idx, n_folds=cfg.num_folds)
+        except TypeError:
+            n_samples = len(clipFiles.label_idx)
+            skf = StratifiedKFold(n_splits = cfg.num_folds)
+            skf = skf.split( np.zeros(n_samples), clipFiles.label_idx) 
+
         for i, (train_split, val_split) in enumerate(skf):
             X, y = X_train[train_split],  y_train.values[train_split]
             X_val, y_val = X_train[val_split], y_train.values[val_split]
