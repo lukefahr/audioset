@@ -37,7 +37,7 @@ num_clips = 800
 
 #create the audio splitter
 asp = audiosplit.AudioSplitter(
-        data_dir = full_dir, sampling_rate = 16000, max_threads = 1,)
+        data_dir = full_dir, sampling_rate = 16000, max_threads = 5,)
 
 #run the full partial-clip (re)classification
 data = asp.Run(labels, includes, excludes, num_clips = num_clips, clip_length_ms=500) 
