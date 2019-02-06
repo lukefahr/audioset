@@ -23,6 +23,7 @@ from keras.layers import (
 from keras.utils import Sequence, to_categorical
 import librosa
 import logging
+import math
 import numpy as np
 import os
 import time
@@ -314,7 +315,7 @@ class AudioSplitter:
            
             # save the column names for the model
             columns = pd.Series( ['name'] + list(y_train))
-            columns.to_csv(cfg.column_names_csv)
+            columns.to_csv(cfg.column_names_csv, header=False)
 
             # Save train predictions
             np.save(cfg.self_prediction_dir + "/train_predictions_%d.npy"%i, predictions)
@@ -339,29 +340,46 @@ class AudioSplitter:
         if not outputFile:
             outputFile = cfg.part_clips_classification_csv
 
+        # 1: load the clips
         clips = pd.read_csv(clipsFile)
 
-        #second : load the actual clip data
-        this.log.debug('loading test data')
-        X_test = this._prepare_data(clips, fileLabel) 
-
-        # third, load the model
+        # 2: load the model
         if (cfg.useDummyModel): model = this._buildDummyModel() 
         else: model = this._buildModel() 
 
-        #fifth: load in the weights
+        # 3: load the weights
         all_models = glob.glob(cfg.models_dir + '/best*.h5') 
         highest_model = '/best_' + str(max(map( lambda x: x.rsplit('.')[0].split('_')[-1], all_models))) + '.h5'
         model.load_weights(cfg.models_dir + highest_model)
 
-        # now predict
-        y_test = model.predict(X_test, batch_size=64, verbose=1)
-
-        # load column names
+        # 4: load output column names
         columnNames = pd.read_csv( cfg.column_names_csv)['name']
+
+        # 5: classify the clips
+        # it takes too much memory to process all the clips at once,
+        # so we split the clips into 1K blocks
+        if (len(clips) >1024):
+            clips_chunks = np.array_split(clips, math.ceil(len(clips) / 1024))
+            this.log.info('Splitting Clips into %d datasets' % len(clips_chunks))
+        else: 
+            clips_chunks = [clips]
         
-        # and save the results
-        y_test = pd.DataFrame(y_test, columns = columnNames)
+        y_test = pd.DataFrame(columns = columnNames)
+
+        for clip_chunk in clips_chunks:
+
+            # 5a:  load the chunk's actual clip data
+            this.log.debug('loading test data for %d clips' % len(clip_chunk) )
+            X_test = this._prepare_data(clip_chunk, fileLabel) 
+
+            # 5b:  make predictions
+            chunk_y_test = model.predict(X_test, batch_size=64, verbose=1)
+
+            # 5c: append this chunk's predictions
+            chunk_y_test = pd.DataFrame(chunk_y_test, columns = columnNames)
+            y_test = y_test.append(chunk_y_test, ignore_index=True)
+        
+        # 6: save the results
         y_test.to_csv( outputFile, index=True, index_label = 'idx')
 
     #
