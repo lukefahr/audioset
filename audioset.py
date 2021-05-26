@@ -616,7 +616,7 @@ class ClipDownloader(object):
         this.log.debug('downloading metas with max_threads: ' + str(max_threads))
 
         if isinstance(metas, tuple):
-            this.log.debub('found tuple, promoting to list')
+            this.log.debug('found tuple, promoting to list')
             metas = [ metas ] 
 
         this.log.info('Collecting ' + str(len(metas)) + ' metadatas')
